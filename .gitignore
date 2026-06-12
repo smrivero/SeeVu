@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+recording_*.wav
+conversation_logs/
+node_modules/
+dist/
