@@ -6,6 +6,13 @@
       "runtimeExecutable": "docker",
       "runtimeArgs": ["compose", "up", "dashboard"],
       "port": 8080
+    },
+    {
+      "name": "vite-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5174"],
+      "cwd": "/Users/smrivero/Documents/GitHub/pipecat/frontend",
+      "port": 5174
     }
   ]
 }

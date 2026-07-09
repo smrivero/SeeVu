@@ -29,6 +29,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         token = request.cookies.get("session")
         if not token or token not in _sessions:
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
             return RedirectResponse("/login", status_code=302)
         return await call_next(request)
 
@@ -196,6 +198,12 @@ def login_page(error: str = ""):
 </script>
 </body>
 </html>""")
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    token = request.cookies.get("session")
+    return {"username": _sessions.get(token or "", "")}
 
 
 @app.post("/api/login")
@@ -366,8 +374,9 @@ async def api_analyze(session_id: str):
 
 # ── Static frontend ──────────────────────────────────────────────────────────
 
-FRONTEND_DIR = Path(__file__).parent / "frontend"
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
 
 
 if __name__ == "__main__":

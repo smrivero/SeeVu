@@ -1,0 +1,56 @@
+export async function checkAuth() {
+  const r = await fetch('/api/me')
+  return r.ok
+}
+
+export async function fetchProviders() {
+  return fetch('/api/providers').then(r => r.json())
+}
+
+export async function fetchConfig() {
+  return fetch('/api/config').then(r => r.json())
+}
+
+export async function saveConfig(provider, voice) {
+  return fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider, voice }),
+  }).then(r => r.json())
+}
+
+export async function fetchConversations() {
+  const r = await fetch('/api/conversations')
+  if (!r.ok) throw new Error('offline')
+  return r.json()
+}
+
+export async function fetchPrompts() {
+  return fetch('/api/prompts').then(r => r.json())
+}
+
+export async function savePromptApi(name, lang, content) {
+  return fetch('/api/prompts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, lang, content }),
+  }).then(r => r.json())
+}
+
+export async function applyPromptApi(content) {
+  return fetch('/api/prompt/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  }).then(r => r.json())
+}
+
+export async function fetchLiveSession() {
+  return fetch('/api/live-session').then(r => r.json())
+}
+
+export async function analyzeCallApi(sessionId) {
+  const r = await fetch(`/api/analyze/${sessionId}`, { method: 'POST' })
+  if (!r.ok) throw new Error('analyze failed')
+  return r.json()
+}

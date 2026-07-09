@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Node.js for Vite build
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app
@@ -9,7 +13,10 @@ RUN uv sync
 
 COPY bot.py dashboard.py ./
 COPY agents_prompts/ ./agents_prompts/
+
+# Build frontend
 COPY frontend/ ./frontend/
+RUN cd frontend && npm ci && npm run build
 
 EXPOSE 7860
 

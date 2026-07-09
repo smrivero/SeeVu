@@ -21,6 +21,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      - ./dashboard.py:/app/dashboard.py
       - ./conversation_logs:/app/conversation_logs
       - ./bot_config:/app/bot_config
     command: uv run dashboard.py --host 0.0.0.0 --port 8080
