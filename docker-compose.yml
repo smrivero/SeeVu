@@ -9,3 +9,18 @@ services:
       - "7860:7860"
     volumes:
       - ./conversation_logs:/app/conversation_logs
+      - ./agents_prompts:/app/agents_prompts
+      - ./bot_config:/app/bot_config
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./conversation_logs:/app/conversation_logs
+      - ./bot_config:/app/bot_config
+    command: uv run dashboard.py --host 0.0.0.0 --port 8080

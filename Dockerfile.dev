@@ -7,7 +7,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked
 
-COPY bot.py ./
+COPY bot.py dashboard.py ./
+COPY agents_prompts/ ./agents_prompts/
 
 EXPOSE 7860
 
