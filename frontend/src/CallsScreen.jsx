@@ -364,6 +364,9 @@ function ConvAnalysis({ sessionId, analysis, lang, onAnalyzed }) {
         setPending(false)
       }}
     >
+      <svg fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.8" style={{width:'14px',height:'14px',flexShrink:0}}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 2L6.5 7H11L7 14M3 4l1 1M13 4l-1 1M3 12l1-1M13 12l-1-1"/>
+      </svg>
       {pending ? t(lang,'analyzing') : t(lang,'analyzeBtn')}
     </button>
   )

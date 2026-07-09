@@ -1,6 +1,26 @@
 export async function checkAuth() {
-  const r = await fetch('/api/me')
+  const r = await fetch('/api/auth/me')
   return r.ok
+}
+
+export async function loginApi(email, password) {
+  const r = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  const data = await r.json()
+  return { ok: r.ok, data }
+}
+
+export async function logoutApi() {
+  await fetch('/api/auth/logout', { method: 'POST' })
+}
+
+export async function getMeApi() {
+  const r = await fetch('/api/auth/me')
+  if (!r.ok) return null
+  return r.json()
 }
 
 export async function fetchProviders() {

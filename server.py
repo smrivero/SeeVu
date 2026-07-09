@@ -7,7 +7,7 @@ from pathlib import Path
 
 import openai
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,14 +15,10 @@ from supabase import Client, create_client
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-USERS = {
-    "upwork": "upwork",
-    "acrons": "acrons1234",
-}
+# token (httponly cookie) → {user_id, email, roles}
+_sessions: dict[str, dict] = {}
 
-_sessions: dict[str, str] = {}  # token → username
-
-PUBLIC_PATHS = {"/api/login"}
+PUBLIC_PATHS = {"/api/auth/login"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -33,14 +29,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not token or token not in _sessions:
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
-            return RedirectResponse("/login", status_code=302)
+            return RedirectResponse("/", status_code=302)
         return await call_next(request)
 
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE", "")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or os.getenv("SUPABASE_SERVICE_ROLE", "")
 
 # Legacy file paths — used as fallback until Supabase schema is applied
 _LOGS_DIR   = Path(os.getenv("LOGS_DIR", "conversation_logs"))
@@ -134,35 +130,80 @@ def load_prompts() -> list[dict]:
         return []
 
 
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def _get_user_roles(user_id: str) -> list[str]:
+    """Devuelve lista de nombres de roles para un user_id."""
+    try:
+        res = get_db().table("user_roles").select("role_id").eq("user_id", user_id).execute()
+        role_ids = [r["role_id"] for r in (res.data or [])]
+        if not role_ids:
+            return []
+        res2 = get_db().table("roles").select("name").in_("id", role_ids).execute()
+        return [r["name"] for r in (res2.data or [])]
+    except Exception:
+        return []
+
+
+def get_session_user(request: Request) -> dict:
+    """FastAPI dependency: retorna el usuario de sesión o lanza 401."""
+    token = request.cookies.get("session")
+    user = _sessions.get(token or "")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+def require_superadmin(user: dict = Depends(get_session_user)) -> dict:
+    if "superadmin" not in user.get("roles", []):
+        raise HTTPException(status_code=403, detail="Superadmin required")
+    return user
+
+
+def require_admin_or_above(user: dict = Depends(get_session_user)) -> dict:
+    if not any(r in user.get("roles", []) for r in ("superadmin", "company_admin")):
+        raise HTTPException(status_code=403, detail="Admin required")
+    return user
+
+
 # ── Auth endpoints ─────────────────────────────────────────────────────────────
 
-@app.get("/api/me")
-def api_me(request: Request):
-    token = request.cookies.get("session")
-    return {"username": _sessions.get(token or "", "")}
-
-
-@app.post("/api/login")
-async def api_login(payload: dict, response: JSONResponse = None):
-    username = payload.get("username", "").strip()
+@app.post("/api/auth/login")
+async def auth_login(payload: dict):
+    email    = payload.get("email", "").strip()
     password = payload.get("password", "")
-    if USERS.get(username) != password:
-        return JSONResponse({"ok": False}, status_code=401)
+    if not email or not password:
+        return JSONResponse({"ok": False, "error": "Email and password required"}, status_code=400)
+    try:
+        auth_resp = get_db().auth.sign_in_with_password({"email": email, "password": password})
+        user = auth_resp.user
+        if not user:
+            raise ValueError("no user")
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid credentials"}, status_code=401)
+
+    roles = _get_user_roles(str(user.id))
     token = secrets.token_hex(32)
-    _sessions[token] = username
+    _sessions[token] = {"user_id": str(user.id), "email": user.email, "roles": roles}
+
     resp = JSONResponse({"ok": True})
     resp.set_cookie("session", token, httponly=True, samesite="lax", max_age=86400 * 7)
     return resp
 
 
-@app.post("/api/logout")
-def logout(request: Request):
+@app.post("/api/auth/logout")
+def auth_logout(request: Request):
     token = request.cookies.get("session")
     if token:
         _sessions.pop(token, None)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("session")
     return resp
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(get_session_user)):
+    return {"user_id": user["user_id"], "email": user["email"], "roles": user["roles"]}
 
 
 # ── API ───────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { checkAuth, fetchProviders, fetchConfig, fetchPrompts } from './api.js'
+import { checkAuth, logoutApi, fetchProviders, fetchConfig, fetchPrompts } from './api.js'
 import LoginScreen from './LoginScreen.jsx'
 import Sidebar from './Sidebar.jsx'
 import CallsScreen from './CallsScreen.jsx'
@@ -57,7 +57,7 @@ export default function App() {
         onLangChange={setLang}
         onThemeChange={dark => setTheme(dark ? 'dark' : 'light')}
         onLogout={async () => {
-          await fetch('/api/logout', { method: 'POST' })
+          await logoutApi()
           setAuthed(false)
         }}
       />

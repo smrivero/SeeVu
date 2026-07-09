@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { loginApi } from './api.js'
 
 export default function LoginScreen({ onLogin }) {
-  const [user, setUser]       = useState(() => localStorage.getItem('saved_user') || '')
+  const [email, setEmail]     = useState(() => localStorage.getItem('saved_email') || '')
   const [pass, setPass]       = useState(() => localStorage.getItem('saved_pass') || '')
-  const [remember, setRemember] = useState(() => !!localStorage.getItem('saved_user'))
+  const [remember, setRemember] = useState(() => !!localStorage.getItem('saved_email'))
+  const [showPass, setShowPass] = useState(false)
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -12,22 +14,18 @@ export default function LoginScreen({ onLogin }) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user, password: pass }),
-      })
-      if (res.ok) {
+      const { ok, data } = await loginApi(email, pass)
+      if (ok) {
         if (remember) {
-          localStorage.setItem('saved_user', user)
+          localStorage.setItem('saved_email', email)
           localStorage.setItem('saved_pass', pass)
         } else {
-          localStorage.removeItem('saved_user')
+          localStorage.removeItem('saved_email')
           localStorage.removeItem('saved_pass')
         }
         onLogin()
       } else {
-        setError('Invalid credentials')
+        setError(data?.error || 'Invalid credentials')
       }
     } catch {
       setError('Connection error')
@@ -63,26 +61,46 @@ export default function LoginScreen({ onLogin }) {
         <div className="login-divider"/>
         {error && <div className="login-error">{error}</div>}
         <form onSubmit={handleSubmit}>
-          <label className="login-label" htmlFor="login-u">Username</label>
+          <label className="login-label" htmlFor="login-u">Email</label>
           <input
             id="login-u"
             className="login-input"
-            type="text"
-            placeholder="Enter your username"
-            autoComplete="username"
-            value={user}
-            onChange={e => setUser(e.target.value)}
+            type="email"
+            placeholder="Enter your email"
+            autoComplete="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
           />
           <label className="login-label" htmlFor="login-p">Password</label>
-          <input
-            id="login-p"
-            className="login-input"
-            type="password"
-            placeholder="Enter your password"
-            autoComplete="current-password"
-            value={pass}
-            onChange={e => setPass(e.target.value)}
-          />
+          <div className="login-input-wrap">
+            <input
+              id="login-p"
+              className="login-input"
+              type={showPass ? 'text' : 'password'}
+              placeholder="Enter your password"
+              autoComplete="current-password"
+              value={pass}
+              onChange={e => setPass(e.target.value)}
+            />
+            <button
+              type="button"
+              className="login-eye"
+              onClick={() => setShowPass(v => !v)}
+              tabIndex={-1}
+              aria-label={showPass ? 'Hide password' : 'Show password'}
+            >
+              {showPass ? (
+                <svg fill="none" viewBox="0 0 20 20" stroke="currentColor" strokeWidth="1.6">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l14 14M10 4C5 4 1.3 10 1.3 10s1.5 2.4 4 4M7.6 7.6A3 3 0 0 0 10 13a3 3 0 0 0 2.4-1.2M12.8 8A3 3 0 0 0 10 7c-.3 0-.6 0-.9.1M15.5 11.5C17.3 9.7 18.7 10 18.7 10S15 4 10 4c-.8 0-1.6.1-2.3.4"/>
+                </svg>
+              ) : (
+                <svg fill="none" viewBox="0 0 20 20" stroke="currentColor" strokeWidth="1.6">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M1.3 10S5 4 10 4s8.7 6 8.7 6-3.7 6-8.7 6S1.3 10 1.3 10z"/>
+                  <circle cx="10" cy="10" r="3"/>
+                </svg>
+              )}
+            </button>
+          </div>
           <label className="login-remember">
             <input
               type="checkbox"

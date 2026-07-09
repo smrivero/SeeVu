@@ -6,3 +6,5 @@ recording_*.wav
 conversation_logs/
 node_modules/
 dist/
+supabase/.branches
+supabase/.temp
