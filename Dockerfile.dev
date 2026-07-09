@@ -5,10 +5,11 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked
+RUN uv sync
 
 COPY bot.py dashboard.py ./
 COPY agents_prompts/ ./agents_prompts/
+COPY frontend/ ./frontend/
 
 EXPOSE 7860
 
