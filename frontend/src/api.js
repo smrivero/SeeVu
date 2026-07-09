@@ -54,3 +54,8 @@ export async function analyzeCallApi(sessionId) {
   if (!r.ok) throw new Error('analyze failed')
   return r.json()
 }
+
+export async function deleteConversationApi(sessionId) {
+  const r = await fetch(`/api/conversations/${sessionId}`, { method: 'DELETE' })
+  return r.json()
+}

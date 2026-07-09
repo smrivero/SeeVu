@@ -1,9 +1,10 @@
 import { useState } from 'react'
 
 export default function LoginScreen({ onLogin }) {
-  const [user, setUser]   = useState('')
-  const [pass, setPass]   = useState('')
-  const [error, setError] = useState('')
+  const [user, setUser]       = useState(() => localStorage.getItem('saved_user') || '')
+  const [pass, setPass]       = useState(() => localStorage.getItem('saved_pass') || '')
+  const [remember, setRemember] = useState(() => !!localStorage.getItem('saved_user'))
+  const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e) {
@@ -17,6 +18,13 @@ export default function LoginScreen({ onLogin }) {
         body: JSON.stringify({ username: user, password: pass }),
       })
       if (res.ok) {
+        if (remember) {
+          localStorage.setItem('saved_user', user)
+          localStorage.setItem('saved_pass', pass)
+        } else {
+          localStorage.removeItem('saved_user')
+          localStorage.removeItem('saved_pass')
+        }
         onLogin()
       } else {
         setError('Invalid credentials')
@@ -75,6 +83,14 @@ export default function LoginScreen({ onLogin }) {
             value={pass}
             onChange={e => setPass(e.target.value)}
           />
+          <label className="login-remember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={e => setRemember(e.target.checked)}
+            />
+            Save credentials
+          </label>
           <button className="login-btn" type="submit" disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>

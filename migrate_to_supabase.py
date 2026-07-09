@@ -58,8 +58,13 @@ if LOGS_DIR.exists():
             except Exception as e:
                 print(f"  ✗ Skipped {f.name}: {e}")
         if convs:
-            db.table("conversations").upsert(convs).execute()
-            print(f"✓ Migrated {len(convs)} conversation(s)")
+            # Keep only columns that exist in the schema
+            COLS = {"session_id","started_at","ended_at","duration_seconds",
+                    "call_info","config","has_audio_bot","has_audio_user",
+                    "messages","usage","analysis"}
+            clean = [{k: v for k, v in c.items() if k in COLS} for c in convs]
+            db.table("conversations").upsert(clean).execute()
+            print(f"✓ Migrated {len(clean)} conversation(s)")
     else:
         print("  No conversation files found")
 else:

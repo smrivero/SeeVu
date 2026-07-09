@@ -1,13 +1,16 @@
 import { useState, useEffect, Fragment } from 'react'
-import { fetchConversations, analyzeCallApi } from './api.js'
+import { fetchConversations, analyzeCallApi, deleteConversationApi } from './api.js'
 import { t } from './i18n.js'
 import { fmtDur, relTime } from './utils.js'
+import ConfirmModal from './ConfirmModal.jsx'
 
 export default function CallsScreen({ lang, onOnlineChange }) {
   const [convs, setConvs]       = useState([])
   const [online, setOnline]     = useState(true)
   const [openRows, setOpenRows] = useState(new Set())
   const [lastUpd, setLastUpd]   = useState(null)
+  const [deleting, setDeleting] = useState(null)
+  const [confirmSid, setConfirmSid] = useState(null)
 
   function setOnlineState(val) {
     setOnline(val)
@@ -37,6 +40,15 @@ export default function CallsScreen({ lang, onOnlineChange }) {
       if (next.has(sid)) { next.delete(sid) } else { next.add(sid) }
       return next
     })
+  }
+
+  async function deleteConv(sid) {
+    setDeleting(sid)
+    await deleteConversationApi(sid)
+    setConvs(prev => prev.filter(c => c.session_id !== sid))
+    setOpenRows(prev => { const n = new Set(prev); n.delete(sid); return n })
+    setDeleting(null)
+    setConfirmSid(null)
   }
 
   function playAudio(sid, track) {
@@ -115,7 +127,7 @@ export default function CallsScreen({ lang, onOnlineChange }) {
                 <th>{t(lang,'colVoice')}</th>
                 <th>{t(lang,'colTokens')}</th>
                 <th>{t(lang,'colAudio')}</th>
-                <th style={{width:'28px'}}></th>
+                <th style={{width:'36px'}}></th>
               </tr>
             </thead>
             <tbody>
@@ -140,19 +152,29 @@ export default function CallsScreen({ lang, onOnlineChange }) {
                   conv={c}
                   lang={lang}
                   open={openRows.has(c.session_id)}
+                  deleting={deleting === c.session_id}
                   onToggle={() => toggle(c.session_id)}
                   onPlayAudio={(track) => playAudio(c.session_id, track)}
+                  onDelete={() => setConfirmSid(c.session_id)}
                 />
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {confirmSid && (
+        <ConfirmModal
+          message="Delete this conversation? This cannot be undone."
+          onConfirm={() => deleteConv(confirmSid)}
+          onCancel={() => setConfirmSid(null)}
+        />
+      )}
     </>
   )
 }
 
-function ConvRow({ conv: c, lang, open, onToggle, onPlayAudio }) {
+function ConvRow({ conv: c, lang, open, deleting, onToggle, onPlayAudio, onDelete }) {
   const sid   = c.session_id || ''
   const iso   = c.started_at || ''
   const dur   = fmtDur(c.duration_seconds || 0)
@@ -210,7 +232,16 @@ function ConvRow({ conv: c, lang, open, onToggle, onPlayAudio }) {
           )}
           {!hasBot && !hasUser && <span style={{color:'var(--text-3)'}}>—</span>}
         </td>
-        <td><span className="chevron">{open ? '▾' : '›'}</span></td>
+        <td>
+          <button
+            className="del-btn"
+            disabled={deleting}
+            onClick={e => { e.stopPropagation(); onDelete() }}
+            title="Delete"
+          >
+            {deleting ? '…' : '×'}
+          </button>
+        </td>
       </tr>
 
       {open && (

@@ -172,6 +172,15 @@ def api_conversations():
     return load_conversations()
 
 
+@app.delete("/api/conversations/{session_id}")
+def api_delete_conversation(session_id: str):
+    try:
+        get_db().table("conversations").delete().eq("session_id", session_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.get("/api/config")
 def api_get_config():
     return load_config()

@@ -268,6 +268,8 @@ input:checked + .slider:before { transform: translateX(16px); }
 .btn-primary:hover  { background: linear-gradient(135deg,#0B98E0,#1EA7F2); box-shadow: 0 2px 8px rgba(30,167,242,.35); }
 .btn-secondary { background: var(--surface); color: var(--text-2); border: 1px solid var(--border); }
 .btn-secondary:hover { color: var(--text); border-color: var(--border-hi); }
+.btn-danger  { background: #ef4444; color: #fff; border: none; }
+.btn-danger:hover { background: #dc2626; box-shadow: 0 2px 8px rgba(239,68,68,.35); }
 .btn-ghost { background: none; color: var(--text-2); border: 1px solid transparent; }
 .btn-ghost:hover { background: var(--nav-h); color: var(--text); }
 .btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
@@ -395,6 +397,14 @@ tbody td {
 
 .td-2  { color: var(--text-2); font-size: 12px; }
 .td-mono { font-family: 'SF Mono','Fira Code',monospace; font-size: 12px; color: var(--text-2); }
+
+.del-btn {
+  background: none; border: none; cursor: pointer; padding: 2px 6px;
+  font-size: 15px; color: var(--text-3); border-radius: 4px; line-height: 1;
+  transition: background var(--t), color var(--t);
+}
+.del-btn:hover { background: rgba(220,38,38,.12); color: #ef4444; }
+.del-btn:disabled { opacity: .4; cursor: default; }
 
 .chevron { color: var(--text-3); font-size: 12px; }
 
@@ -783,6 +793,22 @@ tbody td {
 
 .modal-overlay.open { display: flex; }
 
+.modal-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 28px 24px 24px; width: 360px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  box-shadow: var(--shadow-md); text-align: center;
+}
+.modal-icon {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(239,68,68,.1); display: flex; align-items: center; justify-content: center;
+  color: #ef4444; flex-shrink: 0;
+}
+.modal-icon svg { width: 22px; height: 22px; }
+.modal-msg { font-size: 14px; color: var(--text-2); line-height: 1.5; margin: 0; }
+.modal-actions { display: flex; gap: 8px; width: 100%; margin-top: 4px; }
+.modal-actions .btn { flex: 1; justify-content: center; }
+
 .modal {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 24px; width: 380px;
@@ -857,6 +883,13 @@ tbody td {
 .login-btn:hover { background: linear-gradient(135deg, #0B98E0, #1EA7F2); box-shadow: 0 4px 16px rgba(30,167,242,.4); transform: translateY(-1px); }
 .login-btn:active { transform: translateY(0); }
 .login-btn:disabled { opacity: .5; cursor: default; transform: none; box-shadow: none; }
+.login-remember {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: #8FA8C3; margin-bottom: 12px; cursor: pointer;
+}
+.login-remember input[type="checkbox"] {
+  width: 14px; height: 14px; accent-color: #1EA7F2; cursor: pointer; margin: 0;
+}
 .login-error {
   background: rgba(220,38,38,.15); color: #f87171;
   border: 1px solid rgba(220,38,38,.3); border-radius: 8px;
