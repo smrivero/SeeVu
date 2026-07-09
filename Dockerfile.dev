@@ -11,7 +11,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync
 
-COPY bot.py dashboard.py ./
+COPY bot.py server.py ./
 COPY agents_prompts/ ./agents_prompts/
 
 # Build frontend

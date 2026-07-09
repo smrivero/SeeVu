@@ -1,6 +1,6 @@
 import { t } from './i18n.js'
 
-export default function Sidebar({ activeScreen, onNavigate, lang, theme, online, onLangChange, onThemeChange }) {
+export default function Sidebar({ activeScreen, onNavigate, lang, theme, online, onLangChange, onThemeChange, onLogout }) {
   return (
     <nav className="sidebar">
       <div className="sb-brand">
@@ -102,14 +102,14 @@ export default function Sidebar({ activeScreen, onNavigate, lang, theme, online,
         </div>
 
         <div className="sb-footer-row" style={{borderTop:'1px solid var(--border)',marginTop:'2px',paddingTop:'8px'}}>
-          <a
-            href="/logout"
-            style={{fontSize:'11px',color:'var(--text-3)',textDecoration:'none'}}
+          <button
+            onClick={onLogout}
+            style={{background:'none',border:'none',padding:0,fontSize:'11px',color:'var(--text-3)',cursor:'pointer',fontFamily:'inherit'}}
             onMouseOver={e => e.target.style.color='var(--text)'}
             onMouseOut={e => e.target.style.color='var(--text-3)'}
           >
             {t(lang, 'logout')}
-          </a>
+          </button>
         </div>
       </div>
     </nav>

@@ -4,13 +4,14 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import asyncio
 import datetime
+import io
 import json
 import os
 import wave
 from typing import Optional
 
-import aiofiles
 import aiohttp
 from dotenv import load_dotenv
 from loguru import logger
@@ -39,60 +40,71 @@ from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketTransport,
 )
 from pipecat.workers.runner import WorkerRunner
+from supabase import AsyncClient, acreate_client, create_client
 
 load_dotenv(override=True)
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "agents_prompts", "agent_constructor.txt")
-_ACTIVE_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "bot_config", "active_prompt.txt")
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "bot_config", "settings.json")
-_LIVE_SESSION_PATH = os.path.join(os.path.dirname(__file__), "bot_config", "live_session.json")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE", "")
 
 OPENAI_REALTIME_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
 
 
+def _now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
 def load_prompt() -> str:
-    # Prefer the active prompt set from the dashboard
-    for path in (_ACTIVE_PROMPT_PATH, _PROMPT_PATH):
-        try:
-            with open(path, encoding="utf-8") as f:
-                return f.read().strip()
-        except FileNotFoundError:
-            continue
-    return ""
+    try:
+        db = create_client(SUPABASE_URL, SUPABASE_KEY)
+        res = db.table("active_prompt").select("content").eq("id", 1).single().execute()
+        content = (res.data or {}).get("content", "").strip()
+        if content:
+            return content
+    except Exception as e:
+        logger.warning(f"Could not load prompt from Supabase: {e}")
+    try:
+        with open(_PROMPT_PATH, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
 
 
 def load_config() -> dict:
     default = {"provider": "openai_realtime", "voice": "verse"}
     try:
-        with open(_CONFIG_PATH) as f:
-            return {**default, **json.load(f)}
-    except Exception:
+        db = create_client(SUPABASE_URL, SUPABASE_KEY)
+        res = db.table("app_config").select("provider,voice").eq("id", 1).single().execute()
+        return {**default, **(res.data or {})}
+    except Exception as e:
+        logger.warning(f"Could not load config from Supabase: {e}")
         return default
 
 
-def _write_live_session(data: dict):
+async def _write_live_session(db: AsyncClient, data: dict):
     try:
-        os.makedirs(os.path.dirname(_LIVE_SESSION_PATH), exist_ok=True)
-        with open(_LIVE_SESSION_PATH, "w") as f:
-            json.dump(data, f, ensure_ascii=False)
+        await db.table("live_session").update({**data, "updated_at": _now()}).eq("id", 1).execute()
     except Exception as e:
         logger.warning(f"Failed to write live session: {e}")
 
 
 class ConversationLogger(FrameProcessor):
-    """Captures downstream LLM text frames. User turns are fed via add_user_turn()."""
+    """Captures LLM text frames and user transcriptions for the live session and final save."""
 
-    def __init__(self, config: dict, started_at: datetime.datetime):
+    def __init__(self, config: dict, started_at: datetime.datetime, db: AsyncClient):
         super().__init__()
         self._turns: list[dict] = []
         self._bot_buffer: list[str] = []
         self._config = config
         self._started_at = started_at
+        self._db = db
 
-    def add_user_turn(self, text: str):
+    async def add_user_turn(self, text: str):
         if text:
             self._turns.append({"role": "user", "content": text})
-            self._flush_live()
+            await self._flush_live()
 
     def get_turns(self) -> list[dict]:
         if self._bot_buffer:
@@ -100,26 +112,26 @@ class ConversationLogger(FrameProcessor):
             self._bot_buffer = []
         return self._turns
 
-    def _flush_live(self):
+    async def _flush_live(self):
         turns = list(self._turns)
         if self._bot_buffer:
             turns.append({"role": "assistant", "content": "".join(self._bot_buffer).strip() + "…"})
-        _write_live_session({
+        asyncio.create_task(_write_live_session(self._db, {
             "active": True,
             "started_at": self._started_at.isoformat(),
             "config": self._config,
             "turns": turns,
-        })
+        }))
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMTextFrame) and frame.text:
             self._bot_buffer.append(frame.text)
-            self._flush_live()
+            await self._flush_live()
         elif isinstance(frame, LLMFullResponseEndFrame) and self._bot_buffer:
             self._turns.append({"role": "assistant", "content": "".join(self._bot_buffer).strip()})
             self._bot_buffer = []
-            self._flush_live()
+            await self._flush_live()
         await self.push_frame(frame, direction)
 
 
@@ -143,7 +155,7 @@ class UserTranscriptCapture(FrameProcessor):
             and frame.text
             and direction == FrameDirection.UPSTREAM
         ):
-            self._conv_logger.add_user_turn(frame.text)
+            await self._conv_logger.add_user_turn(frame.text)
         await self.push_frame(frame, direction)
 
 
@@ -167,7 +179,7 @@ class MetricsCollector(FrameProcessor):
 
 
 class AudioRecorder(FrameProcessor):
-    """Captures input (user) and output (bot) audio frames and saves separate WAV files."""
+    """Captures input (user) and output (bot) audio frames, uploads to Supabase Storage."""
 
     def __init__(self):
         super().__init__()
@@ -188,29 +200,37 @@ class AudioRecorder(FrameProcessor):
             self._user_rate = frame.sample_rate
         await self.push_frame(frame, direction)
 
-    def _write_wav(self, path: str, chunks: list[bytes], rate: int, channels: int) -> str | None:
+    def _make_wav_bytes(self, chunks: list[bytes], rate: int, channels: int) -> bytes | None:
         if not chunks:
             return None
-        audio_data = b"".join(chunks)
-        with wave.open(path, "wb") as wf:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
             wf.setnchannels(channels)
             wf.setsampwidth(2)
             wf.setframerate(rate)
-            wf.writeframes(audio_data)
-        logger.info(f"Audio saved: {path} ({len(audio_data)} bytes, {rate}Hz)")
-        return path
+            wf.writeframes(b"".join(chunks))
+        return buf.getvalue()
 
-    def save(self, folder: str, session_id: str) -> dict[str, str | None]:
-        os.makedirs(folder, exist_ok=True)
-        bot = self._write_wav(
-            os.path.join(folder, f"audio_bot_{session_id}.wav"),
-            self._bot_chunks, self._bot_rate, self._channels,
-        )
-        user = self._write_wav(
-            os.path.join(folder, f"audio_user_{session_id}.wav"),
-            self._user_chunks, self._user_rate, self._channels,
-        )
-        return {"bot": bot, "user": user}
+    async def save(self, session_id: str, db: AsyncClient) -> dict[str, bool]:
+        results = {"bot": False, "user": False}
+        uploads = [
+            ("bot", self._make_wav_bytes(self._bot_chunks, self._bot_rate, self._channels)),
+            ("user", self._make_wav_bytes(self._user_chunks, self._user_rate, self._channels)),
+        ]
+        for track, data in uploads:
+            if not data:
+                continue
+            try:
+                await db.storage.from_("audio").upload(
+                    f"{track}_{session_id}.wav",
+                    data,
+                    {"content-type": "audio/wav", "upsert": "true"},
+                )
+                results[track] = True
+                logger.info(f"Audio uploaded: {track}_{session_id}.wav ({len(data)} bytes)")
+            except Exception as e:
+                logger.error(f"Failed to upload {track} audio: {e}")
+        return results
 
 
 async def get_call_info(call_sid: str) -> dict:
@@ -237,13 +257,11 @@ async def save_conversation(
     started_at: datetime.datetime,
     metrics: MetricsCollector,
     config: dict,
-    audio_files: dict[str, str | None],
+    audio: dict[str, bool],
+    db: AsyncClient,
 ):
-    folder = "conversation_logs"
-    os.makedirs(folder, exist_ok=True)
     ended_at = datetime.datetime.now()
     session_id = started_at.strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(folder, f"conversation_{session_id}.json")
     data = {
         "session_id": session_id,
         "started_at": started_at.isoformat(),
@@ -251,17 +269,16 @@ async def save_conversation(
         "duration_seconds": round((ended_at - started_at).total_seconds()),
         "call_info": call_info,
         "config": config,
-        "has_audio_bot": audio_files.get("bot") is not None,
-        "has_audio_user": audio_files.get("user") is not None,
+        "has_audio_bot": audio.get("bot", False),
+        "has_audio_user": audio.get("user", False),
         "messages": turns,
         "usage": {
             "llm": metrics.llm_usage,
             "tts_characters": metrics.tts_characters,
         },
     }
-    async with aiofiles.open(filename, "w") as file:
-        await file.write(json.dumps(data, indent=2, ensure_ascii=False))
-    logger.info(f"Conversation saved to {filename}")
+    await db.table("conversations").upsert(data).execute()
+    logger.info(f"Conversation saved to Supabase: {session_id}")
 
 
 async def run_bot(
@@ -277,6 +294,8 @@ async def run_bot(
         voice = "verse"
 
     logger.info(f"Starting with provider=openai_realtime voice={voice}")
+
+    db: AsyncClient = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
 
     llm = OpenAIRealtimeLLMService(
         api_key=os.getenv("OPENAI_API_KEY"),
@@ -307,7 +326,7 @@ async def run_bot(
     )
 
     started_at = datetime.datetime.now()
-    conv_logger = ConversationLogger(config, started_at)
+    conv_logger = ConversationLogger(config, started_at, db)
     user_capture = UserTranscriptCapture(conv_logger)
     metrics_collector = MetricsCollector()
     audio_recorder = AudioRecorder()
@@ -337,21 +356,27 @@ async def run_bot(
         nonlocal started_at
         started_at = datetime.datetime.now()
         conv_logger._started_at = started_at
-        _write_live_session({"active": True, "started_at": started_at.isoformat(), "config": config, "turns": []})
+        await _write_live_session(db, {
+            "active": True,
+            "started_at": started_at.isoformat(),
+            "config": config,
+            "turns": [],
+        })
         await worker.queue_frames([LLMContext()])
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
-        _write_live_session({"active": False, "turns": []})
+        await _write_live_session(db, {"active": False, "turns": []})
         session_id = started_at.strftime("%Y%m%d_%H%M%S")
-        audio_files = audio_recorder.save("conversation_logs", session_id)
+        audio = await audio_recorder.save(session_id, db)
         await save_conversation(
             conv_logger.get_turns(),
             call_info or {},
             started_at,
             metrics_collector,
             config,
-            audio_files,
+            audio,
+            db,
         )
         await worker.cancel()
 

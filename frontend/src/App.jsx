@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { checkAuth, fetchProviders, fetchConfig, fetchPrompts } from './api.js'
+import LoginScreen from './LoginScreen.jsx'
 import Sidebar from './Sidebar.jsx'
 import CallsScreen from './CallsScreen.jsx'
 import TestCallScreen from './TestCallScreen.jsx'
@@ -7,6 +8,7 @@ import SettingsScreen from './SettingsScreen.jsx'
 import SavePromptModal from './SavePromptModal.jsx'
 
 export default function App() {
+  const [authed, setAuthed]     = useState(null) // null=loading, false=login, true=dashboard
   const [screen, setScreen]     = useState('calls')
   const [lang, setLang]         = useState(() => localStorage.getItem('lang') || 'en')
   const [theme, setTheme]       = useState(() => localStorage.getItem('theme') || 'light')
@@ -14,14 +16,12 @@ export default function App() {
   const [config, setConfig]     = useState({ provider: 'openai_realtime', voice: 'verse' })
   const [prompts, setPrompts]   = useState([])
   const [online, setOnline]     = useState(true)
-  const [modal, setModal]       = useState(null) // { content: string }
+  const [modal, setModal]       = useState(null)
 
   useEffect(() => {
-    checkAuth().then(ok => { if (!ok) window.location.href = '/login' })
-    Promise.all([fetchProviders(), fetchConfig(), fetchPrompts()]).then(([p, c, pr]) => {
-      setProviders(p)
-      setConfig(c)
-      setPrompts(pr)
+    checkAuth().then(ok => {
+      setAuthed(ok)
+      if (ok) loadData()
     })
   }, [])
 
@@ -34,6 +34,18 @@ export default function App() {
     localStorage.setItem('lang', lang)
   }, [lang])
 
+  function loadData() {
+    Promise.all([fetchProviders(), fetchConfig(), fetchPrompts()]).then(([p, c, pr]) => {
+      setProviders(p)
+      setConfig(c)
+      setPrompts(pr)
+    })
+  }
+
+  if (authed === null) return null
+
+  if (!authed) return <LoginScreen onLogin={() => { setAuthed(true); loadData() }} />
+
   return (
     <>
       <Sidebar
@@ -44,6 +56,10 @@ export default function App() {
         online={online}
         onLangChange={setLang}
         onThemeChange={dark => setTheme(dark ? 'dark' : 'light')}
+        onLogout={async () => {
+          await fetch('/api/logout', { method: 'POST' })
+          setAuthed(false)
+        }}
       />
 
       <div className="main">
