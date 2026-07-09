@@ -130,6 +130,17 @@ def load_prompts() -> list[dict]:
         return []
 
 
+def _set_live_session_initiator(user: dict):
+    """Guarda quién va a iniciar la próxima llamada en live_session."""
+    try:
+        get_db().table("live_session").update({
+            "initiated_by": user["user_id"],
+            "initiated_by_email": user["email"],
+        }).eq("id", 1).execute()
+    except Exception:
+        pass
+
+
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 def _get_user_roles(user_id: str) -> list[str]:
@@ -228,13 +239,14 @@ def api_get_config():
 
 
 @app.post("/api/config")
-async def api_set_config(payload: dict):
+async def api_set_config(payload: dict, user: dict = Depends(get_session_user)):
     try:
         get_db().table("app_config").update({
             "provider": payload.get("provider"),
             "voice": payload.get("voice"),
             "updated_at": _now(),
         }).eq("id", 1).execute()
+        _set_live_session_initiator(user)
         return {"ok": True}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -265,7 +277,7 @@ async def api_save_prompt(payload: dict):
 
 
 @app.post("/api/prompt/apply")
-async def api_apply_prompt(payload: dict):
+async def api_apply_prompt(payload: dict, user: dict = Depends(get_session_user)):
     content = payload.get("content", "").strip()
     if not content:
         return JSONResponse({"ok": False, "error": "content required"}, status_code=400)
@@ -274,6 +286,7 @@ async def api_apply_prompt(payload: dict):
             "content": content,
             "updated_at": _now(),
         }).eq("id", 1).execute()
+        _set_live_session_initiator(user)
         return {"ok": True}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

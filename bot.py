@@ -259,6 +259,8 @@ async def save_conversation(
     config: dict,
     audio: dict[str, bool],
     db: AsyncClient,
+    created_by: str | None = None,
+    created_by_email: str | None = None,
 ):
     ended_at = datetime.datetime.now()
     session_id = started_at.strftime("%Y%m%d_%H%M%S")
@@ -277,6 +279,10 @@ async def save_conversation(
             "tts_characters": metrics.tts_characters,
         },
     }
+    if created_by:
+        data["created_by"] = created_by
+    if created_by_email:
+        data["created_by_email"] = created_by_email
     await db.table("conversations").upsert(data).execute()
     logger.info(f"Conversation saved to Supabase: {session_id}")
 
@@ -296,6 +302,17 @@ async def run_bot(
     logger.info(f"Starting with provider=openai_realtime voice={voice}")
 
     db: AsyncClient = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # Quién inició la sesión desde el dashboard (puede ser None para llamadas externas)
+    _initiated_by: str | None = None
+    _initiated_by_email: str | None = None
+    try:
+        ls = await db.table("live_session").select("initiated_by,initiated_by_email").eq("id", 1).execute()
+        if ls.data:
+            _initiated_by = ls.data[0].get("initiated_by")
+            _initiated_by_email = ls.data[0].get("initiated_by_email")
+    except Exception:
+        pass
 
     llm = OpenAIRealtimeLLMService(
         api_key=os.getenv("OPENAI_API_KEY"),
@@ -377,6 +394,8 @@ async def run_bot(
             config,
             audio,
             db,
+            created_by=_initiated_by,
+            created_by_email=_initiated_by_email,
         )
         await worker.cancel()
 

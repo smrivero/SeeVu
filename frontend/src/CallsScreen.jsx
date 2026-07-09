@@ -127,13 +127,14 @@ export default function CallsScreen({ lang, onOnlineChange }) {
                 <th>{t(lang,'colVoice')}</th>
                 <th>{t(lang,'colTokens')}</th>
                 <th>{t(lang,'colAudio')}</th>
+                <th>User</th>
                 <th style={{width:'36px'}}></th>
               </tr>
             </thead>
             <tbody>
               {convs.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{padding:0}}>
+                  <td colSpan="8" style={{padding:0}}>
                     <div className="empty-state">
                       <div className="empty-state-icon">
                         <svg fill="none" viewBox="0 0 22 22" stroke="currentColor" strokeWidth="1.5">
@@ -191,6 +192,7 @@ function ConvRow({ conv: c, lang, open, deleting, onToggle, onPlayAudio, onDelet
   const hasBot  = !!c.has_audio_bot
   const hasUser = !!c.has_audio_user
   const [analysis, setAnalysis] = useState(c.analysis || null)
+  const createdBy = c.created_by_email || null
 
   const isBrowser = from === 'browser'
 
@@ -232,6 +234,11 @@ function ConvRow({ conv: c, lang, open, deleting, onToggle, onPlayAudio, onDelet
           )}
           {!hasBot && !hasUser && <span style={{color:'var(--text-3)'}}>—</span>}
         </td>
+        <td className="td-user">
+          {createdBy
+            ? <span className="user-badge" title={createdBy}>{createdBy.split('@')[0]}</span>
+            : <span style={{color:'var(--text-3)'}}>—</span>}
+        </td>
         <td>
           <button
             className="del-btn"
@@ -246,7 +253,7 @@ function ConvRow({ conv: c, lang, open, deleting, onToggle, onPlayAudio, onDelet
 
       {open && (
         <tr className="detail">
-          <td colSpan="7">
+          <td colSpan="8">
             {/* Recordings */}
             <div className="det-rec">
               <div className="det-sec-hd">{t(lang,'recordings')}</div>
