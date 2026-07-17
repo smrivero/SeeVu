@@ -130,6 +130,27 @@ def load_prompts() -> list[dict]:
         return []
 
 
+def load_active_prompt() -> str:
+    return load_active_prompt_data()["content"]
+
+
+def load_active_prompt_data() -> dict:
+    default = {"content": "", "prompt_id": None}
+    try:
+        res = get_db().table("active_prompt").select("content,prompt_id").eq("id", 1).single().execute()
+        if res.data:
+            return {
+                "content": (res.data.get("content") or "").strip(),
+                "prompt_id": res.data.get("prompt_id") or None,
+            }
+    except Exception:
+        pass
+    try:
+        return {"content": _ACTIVE_PROMPT_FILE.read_text(encoding="utf-8").strip(), "prompt_id": None}
+    except Exception:
+        return default
+
+
 def _set_live_session_initiator(user: dict):
     """Guarda quién va a iniciar la próxima llamada en live_session."""
     try:
@@ -257,6 +278,11 @@ def api_get_prompts():
     return load_prompts()
 
 
+@app.get("/api/prompt/active")
+def api_get_active_prompt():
+    return load_active_prompt_data()
+
+
 @app.post("/api/prompts")
 async def api_save_prompt(payload: dict):
     name = payload.get("name", "").strip()
@@ -281,13 +307,15 @@ async def api_apply_prompt(payload: dict, user: dict = Depends(get_session_user)
     content = payload.get("content", "").strip()
     if not content:
         return JSONResponse({"ok": False, "error": "content required"}, status_code=400)
+    prompt_id = (payload.get("prompt_id") or "").strip() or None
     try:
         get_db().table("active_prompt").update({
             "content": content,
+            "prompt_id": prompt_id,
             "updated_at": _now(),
         }).eq("id", 1).execute()
         _set_live_session_initiator(user)
-        return {"ok": True}
+        return {"ok": True, "prompt_id": prompt_id}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 

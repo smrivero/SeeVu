@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { checkAuth, logoutApi, fetchProviders, fetchConfig, fetchPrompts } from './api.js'
+import { checkAuth, logoutApi, fetchProviders, fetchConfig, fetchPrompts, fetchActivePrompt } from './api.js'
+import { resolveActivePromptSelection } from './utils.js'
 import LoginScreen from './LoginScreen.jsx'
 import Sidebar from './Sidebar.jsx'
 import CallsScreen from './CallsScreen.jsx'
@@ -15,6 +16,7 @@ export default function App() {
   const [providers, setProviders] = useState({})
   const [config, setConfig]     = useState({ provider: 'openai_realtime', voice: 'verse' })
   const [prompts, setPrompts]   = useState([])
+  const [activePromptData, setActivePromptData] = useState({ content: '', promptId: '' })
   const [online, setOnline]     = useState(true)
   const [modal, setModal]       = useState(null)
 
@@ -35,10 +37,11 @@ export default function App() {
   }, [lang])
 
   function loadData() {
-    Promise.all([fetchProviders(), fetchConfig(), fetchPrompts()]).then(([p, c, pr]) => {
+    Promise.all([fetchProviders(), fetchConfig(), fetchPrompts(), fetchActivePrompt()]).then(([p, c, pr, ap]) => {
       setProviders(p)
       setConfig(c)
       setPrompts(pr)
+      setActivePromptData(resolveActivePromptSelection(pr, ap))
     })
   }
 
@@ -73,11 +76,14 @@ export default function App() {
         <div className={`screen${screen === 'testcall' ? ' active' : ''}`}>
           <TestCallScreen
             lang={lang}
+            isActive={screen === 'testcall'}
             providers={providers}
             config={config}
             prompts={prompts}
+            activePromptData={activePromptData}
             onPromptsChange={setPrompts}
             onConfigChange={setConfig}
+            onActivePromptChange={setActivePromptData}
             onOpenModal={content => setModal({ content })}
           />
         </div>
@@ -85,11 +91,14 @@ export default function App() {
         <div className={`screen${screen === 'settings' ? ' active' : ''}`}>
           <SettingsScreen
             lang={lang}
+            isActive={screen === 'settings'}
             providers={providers}
             config={config}
             prompts={prompts}
+            activePromptData={activePromptData}
             onPromptsChange={setPrompts}
             onConfigChange={setConfig}
+            onActivePromptChange={setActivePromptData}
             onOpenModal={content => setModal({ content })}
           />
         </div>

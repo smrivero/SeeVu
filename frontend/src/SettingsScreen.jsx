@@ -1,16 +1,45 @@
 import { useState, useEffect } from 'react'
-import { saveConfig, applyPromptApi } from './api.js'
+import { saveConfig, applyPromptApi, fetchActivePrompt } from './api.js'
+import { BOT_WS_URL_KEY, getBotWsUrl } from './hooks/useVoiceCall.js'
+import { resolveActivePromptSelection } from './utils.js'
 import { t } from './i18n.js'
 
-export default function SettingsScreen({ lang, providers, config, prompts, onPromptsChange, onConfigChange, onOpenModal }) {
-  const [provider, setProvider]   = useState(config.provider)
-  const [voice, setVoice]         = useState(config.voice)
-  const [clientUrl, setClientUrl] = useState(() => localStorage.getItem('clientUrl') || 'http://localhost:5173')
-  const [promptText, setPromptText] = useState('')
+export default function SettingsScreen({
+  lang,
+  isActive,
+  providers,
+  config,
+  prompts,
+  activePromptData,
+  onConfigChange,
+  onActivePromptChange,
+  onOpenModal,
+}) {
+  const [provider, setProvider] = useState(config.provider)
+  const [voice, setVoice] = useState(config.voice)
+  const [botWsUrl, setBotWsUrl] = useState(getBotWsUrl)
+  const [promptText, setPromptText] = useState(activePromptData.content || '')
+  const [selectedPromptId, setSelectedPromptId] = useState(activePromptData.promptId || '')
   const [configStatus, setConfigStatus] = useState(null)
   const [promptStatus, setPromptStatus] = useState(null)
 
   useEffect(() => { setProvider(config.provider); setVoice(config.voice) }, [config])
+
+  useEffect(() => {
+    const { content, promptId } = resolveActivePromptSelection(prompts, activePromptData)
+    setPromptText(content)
+    setSelectedPromptId(promptId)
+  }, [activePromptData, prompts])
+
+  useEffect(() => {
+    if (!isActive) return
+    fetchActivePrompt().then((data) => {
+      const synced = resolveActivePromptSelection(prompts, data)
+      setPromptText(synced.content)
+      setSelectedPromptId(synced.promptId)
+      onActivePromptChange(synced)
+    })
+  }, [isActive, onActivePromptChange, prompts])
 
   const voices = providers[provider]?.voices || []
 
@@ -25,19 +54,19 @@ export default function SettingsScreen({ lang, providers, config, prompts, onPro
     showSfb(setConfigStatus, d.ok, d.ok ? t(lang,'applied') : 'Error')
   }
 
-  function applyClientUrl() {
-    localStorage.setItem('clientUrl', clientUrl)
-    window.dispatchEvent(new CustomEvent('client-url-change', { detail: clientUrl }))
+  function applyBotWsUrl() {
+    localStorage.setItem(BOT_WS_URL_KEY, botWsUrl.trim())
     showSfb(setConfigStatus, true, t(lang,'applied'))
   }
 
   async function handleApplyPrompt() {
     if (!promptText.trim()) return
-    const d = await applyPromptApi(promptText.trim())
+    const d = await applyPromptApi(promptText.trim(), selectedPromptId || null)
+    if (d.ok) {
+      onActivePromptChange({ content: promptText.trim(), promptId: selectedPromptId || d.prompt_id || '' })
+    }
     showSfb(setPromptStatus, d.ok, d.ok ? t(lang,'applied') : 'Error')
   }
-
-  const selectedPrompt = prompts.find(p => p.content === promptText)
 
   return (
     <>
@@ -80,15 +109,15 @@ export default function SettingsScreen({ lang, providers, config, prompts, onPro
             </div>
           </div>
 
-          {/* Client URL */}
+          {/* Bot WebSocket URL */}
           <div className="sc">
-            <div className="sc-hd">{t(lang,'settingsClient')}</div>
+            <div className="sc-hd">{t(lang,'settingsBot')}</div>
             <div className="sc-body">
               <div className="field">
-                <label>{t(lang,'lblUrl')}</label>
-                <input type="text" value={clientUrl} onChange={e => setClientUrl(e.target.value)} />
+                <label>{t(lang,'lblBotUrl')}</label>
+                <input type="text" value={botWsUrl} onChange={e => setBotWsUrl(e.target.value)} />
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={applyClientUrl}>
+              <button className="btn btn-secondary btn-sm" onClick={applyBotWsUrl}>
                 {t(lang,'btnApply')}
               </button>
             </div>
@@ -101,10 +130,15 @@ export default function SettingsScreen({ lang, providers, config, prompts, onPro
               <div className="field">
                 <label>{t(lang,'lblSavedPrompts')}</label>
                 <select
-                  value={selectedPrompt?.id || ''}
-                  onChange={e => {
-                    const p = prompts.find(x => x.id === e.target.value)
-                    if (p) setPromptText(p.content)
+                  value={selectedPromptId}
+                  onChange={(e) => {
+                    const p = prompts.find((x) => x.id === e.target.value)
+                    if (p) {
+                      setSelectedPromptId(p.id)
+                      setPromptText(p.content)
+                    } else {
+                      setSelectedPromptId('')
+                    }
                   }}
                 >
                   <option value="">{t(lang,'promptPH')}</option>

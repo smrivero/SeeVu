@@ -49,6 +49,10 @@ export async function fetchPrompts() {
   return fetch('/api/prompts').then(r => r.json())
 }
 
+export async function fetchActivePrompt() {
+  return fetch('/api/prompt/active').then(r => r.json())
+}
+
 export async function savePromptApi(name, lang, content) {
   return fetch('/api/prompts', {
     method: 'POST',
@@ -57,11 +61,11 @@ export async function savePromptApi(name, lang, content) {
   }).then(r => r.json())
 }
 
-export async function applyPromptApi(content) {
+export async function applyPromptApi(content, promptId = null) {
   return fetch('/api/prompt/apply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, prompt_id: promptId || undefined }),
   }).then(r => r.json())
 }
 
