@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import os
@@ -7,7 +8,8 @@ from pathlib import Path
 
 import openai
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request
+import websockets
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,12 +23,22 @@ _sessions: dict[str, dict] = {}
 PUBLIC_PATHS = {"/api/auth/login"}
 
 
+def _is_authenticated(request: Request) -> bool:
+    token = request.cookies.get("session")
+    return bool(token and token in _sessions)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
-        token = request.cookies.get("session")
-        if not token or token not in _sessions:
+
+        if request.url.path == "/ws":
+            if not _is_authenticated(request):
+                return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+            return await call_next(request)
+
+        if not _is_authenticated(request):
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
             return RedirectResponse("/", status_code=302)
@@ -398,6 +410,53 @@ async def api_analyze(session_id: str):
 
     get_db().table("conversations").update({"analysis": analysis}).eq("session_id", session_id).execute()
     return analysis
+
+
+# ── WebSocket proxy (production: dashboard → bot interno) ─────────────────────
+
+BOT_INTERNAL_WS_URL = os.getenv("BOT_INTERNAL_WS_URL", "ws://127.0.0.1:7860/ws")
+
+
+@app.websocket("/ws")
+async def websocket_proxy(client_ws: WebSocket):
+    await client_ws.accept()
+    try:
+        async with websockets.connect(BOT_INTERNAL_WS_URL, open_timeout=15) as bot_ws:
+
+            async def client_to_bot():
+                try:
+                    while True:
+                        msg = await client_ws.receive()
+                        if msg["type"] == "websocket.disconnect":
+                            break
+                        if msg.get("text") is not None:
+                            await bot_ws.send(msg["text"])
+                        elif msg.get("bytes") is not None:
+                            await bot_ws.send(msg["bytes"])
+                except WebSocketDisconnect:
+                    pass
+
+            async def bot_to_client():
+                try:
+                    async for message in bot_ws:
+                        if isinstance(message, str):
+                            await client_ws.send_text(message)
+                        else:
+                            await client_ws.send_bytes(message)
+                except websockets.ConnectionClosed:
+                    pass
+
+            done, pending = await asyncio.wait(
+                [asyncio.create_task(client_to_bot()), asyncio.create_task(bot_to_client())],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+    except Exception:
+        pass
+    finally:
+        await client_ws.close()
 
 
 # ── Static frontend ────────────────────────────────────────────────────────────

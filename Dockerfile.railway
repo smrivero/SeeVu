@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked
+
+COPY bot.py server.py ./
+COPY agents_prompts/ ./agents_prompts/
+COPY bot_config/ ./bot_config/
+COPY scripts/start-production.sh ./scripts/start-production.sh
+RUN chmod +x ./scripts/start-production.sh
+
+COPY frontend/ ./frontend/
+RUN cd frontend && npm ci && npm run build
+
+ENV BOT_INTERNAL_WS_URL=ws://127.0.0.1:7860/ws
+ENV BOT_PORT=7860
+
+EXPOSE 8080
+
+CMD ["./scripts/start-production.sh"]
