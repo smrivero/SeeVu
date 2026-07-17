@@ -40,6 +40,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
             return await call_next(request)
 
+        if path == "/ws/twilio":
+            return await call_next(request)
+
         if path == "/ws":
             if not _is_authenticated(request):
                 return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
@@ -434,8 +437,7 @@ async def api_analyze(session_id: str):
 BOT_INTERNAL_WS_URL = os.getenv("BOT_INTERNAL_WS_URL", "ws://127.0.0.1:7860/ws")
 
 
-@app.websocket("/ws")
-async def websocket_proxy(client_ws: WebSocket):
+async def _proxy_to_bot(client_ws: WebSocket) -> None:
     await client_ws.accept()
     try:
         async with websockets.connect(BOT_INTERNAL_WS_URL, open_timeout=15) as bot_ws:
@@ -463,7 +465,7 @@ async def websocket_proxy(client_ws: WebSocket):
                 except websockets.ConnectionClosed:
                     pass
 
-            done, pending = await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 [asyncio.create_task(client_to_bot()), asyncio.create_task(bot_to_client())],
                 return_when=asyncio.FIRST_COMPLETED,
             )
@@ -474,6 +476,18 @@ async def websocket_proxy(client_ws: WebSocket):
         pass
     finally:
         await client_ws.close()
+
+
+@app.websocket("/ws")
+async def websocket_proxy_dashboard(client_ws: WebSocket):
+    """WebSocket autenticado para pruebas desde el dashboard (navegador)."""
+    await _proxy_to_bot(client_ws)
+
+
+@app.websocket("/ws/twilio")
+async def websocket_proxy_twilio(client_ws: WebSocket):
+    """WebSocket público para llamadas telefónicas de Twilio (sin login)."""
+    await _proxy_to_bot(client_ws)
 
 
 # ── Static frontend ────────────────────────────────────────────────────────────
