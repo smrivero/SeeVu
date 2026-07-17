@@ -20,7 +20,7 @@ from supabase import Client, create_client
 # token (httponly cookie) → {user_id, email, roles}
 _sessions: dict[str, dict] = {}
 
-PUBLIC_PATHS = {"/api/auth/login"}
+PUBLIC_PATHS = {"/api/auth/login", "/health"}
 
 
 def _is_authenticated(request: Request) -> bool:
@@ -30,18 +30,22 @@ def _is_authenticated(request: Request) -> bool:
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in PUBLIC_PATHS:
+        path = request.url.path
+
+        if path in PUBLIC_PATHS:
             return await call_next(request)
 
-        if request.url.path == "/ws":
+        if path.startswith("/api/"):
             if not _is_authenticated(request):
                 return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
             return await call_next(request)
 
-        if not _is_authenticated(request):
-            if request.url.path.startswith("/api/"):
+        if path == "/ws":
+            if not _is_authenticated(request):
                 return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
-            return RedirectResponse("/", status_code=302)
+            return await call_next(request)
+
+        # Frontend estático y SPA (incluye la pantalla de login en /)
         return await call_next(request)
 
 
@@ -92,6 +96,11 @@ PROVIDERS = {
 
 app = FastAPI()
 app.add_middleware(AuthMiddleware)
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
@@ -231,7 +240,15 @@ async def auth_login(payload: dict):
     _sessions[token] = {"user_id": str(user.id), "email": user.email, "roles": roles}
 
     resp = JSONResponse({"ok": True})
-    resp.set_cookie("session", token, httponly=True, samesite="lax", max_age=86400 * 7)
+    secure_cookie = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RENDER"))
+    resp.set_cookie(
+        "session",
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=secure_cookie,
+        max_age=86400 * 7,
+    )
     return resp
 
 
