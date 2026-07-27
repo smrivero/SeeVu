@@ -70,13 +70,6 @@ logger.add(
     retention=3,
     level="INFO",
     format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
-    # Regular files get block-buffered by Python when not attached to a
-    # tty, so writes were sitting in an in-process buffer and never
-    # reaching disk until the buffer filled. Force line buffering so
-    # every log line is flushed immediately (server.py reads this file
-    # directly in production, where there's no docker log stream to
-    # fall back on).
-    buffering=1,
 )
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "agents_prompts", "agent_constructor.txt")

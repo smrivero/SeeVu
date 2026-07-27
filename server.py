@@ -447,11 +447,17 @@ def _read_logs_via_file(offset: int) -> dict:
         size = _BOT_LOG_FILE.stat().st_size
         if offset > size:
             offset = 0  # file was rotated
-        with open(_BOT_LOG_FILE, errors="replace") as f:
+        # Open in binary mode: seek() with a raw byte offset is only
+        # well-defined for binary files. Text-mode seek() requires an
+        # opaque cookie from tell() on the same handle, so seeking with
+        # a plain byte count (as we do here across requests) was silently
+        # landing in the wrong spot and returning no new content.
+        with open(_BOT_LOG_FILE, "rb") as f:
             f.seek(offset)
             chunk = f.read(64 * 1024)  # max 64 KB per poll
-        lines = [l for l in chunk.splitlines() if l.strip()]
-        return {"lines": lines, "next_offset": offset + len(chunk.encode("utf-8", errors="replace"))}
+        text = chunk.decode("utf-8", errors="replace")
+        lines = [l for l in text.splitlines() if l.strip()]
+        return {"lines": lines, "next_offset": offset + len(chunk)}
     except Exception as e:
         return {"lines": [f"[server] Error: {e}"], "next_offset": offset}
 
