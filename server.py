@@ -542,6 +542,7 @@ async def _proxy_to_bot(client_ws: WebSocket) -> None:
     await client_ws.accept()
     try:
         async with websockets.connect(BOT_INTERNAL_WS_URL, open_timeout=15) as bot_ws:
+            print(f"[ws-proxy] connected to bot at {BOT_INTERNAL_WS_URL}", flush=True)
 
             async def client_to_bot():
                 try:
@@ -573,8 +574,8 @@ async def _proxy_to_bot(client_ws: WebSocket) -> None:
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ws-proxy] error connecting to bot at {BOT_INTERNAL_WS_URL}: {e!r}", flush=True)
     finally:
         await client_ws.close()
 
