@@ -61,15 +61,17 @@ from supabase import AsyncClient, acreate_client, create_client
 load_dotenv(override=True)
 
 # ── File logging (shared with dashboard via conversation_logs/ volume) ────────
-_LOG_DIR = os.path.join(os.path.dirname(__file__), "conversation_logs")
+_LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "conversation_logs"))
 os.makedirs(_LOG_DIR, exist_ok=True)
+_BOT_LOG_PATH = os.path.join(_LOG_DIR, "bot.log")
 logger.add(
-    os.path.join(_LOG_DIR, "bot.log"),
+    _BOT_LOG_PATH,
     rotation="10 MB",
     retention=3,
     level="INFO",
     format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
 )
+print(f"[bot] file logger -> {_BOT_LOG_PATH} (dir exists: {os.path.isdir(_LOG_DIR)}, cwd: {os.getcwd()})", flush=True)
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "agents_prompts", "agent_constructor.txt")
 
