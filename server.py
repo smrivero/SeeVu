@@ -403,43 +403,68 @@ def api_providers():
 
 
 _PROJECT_ROOT = Path(__file__).parent
+_BOT_LOG_FILE = _PROJECT_ROOT / "conversation_logs" / "bot.log"
 
 
-@app.get("/api/logs/recent")
-def get_bot_logs(offset: int = 0, _user: dict = Depends(get_session_user)):
-    """Returns new log lines from docker compose logs since line `offset`."""
+def _keep_log_line(line: str) -> bool:
+    """Filter out noisy system-prompt lines that pipecat logs as bare INF lines
+    (no timestamp prefix). Keep only structured log lines and server messages."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    # pipecat structured line: starts with a timestamp "2026-..."
+    if stripped[:4].isdigit():
+        return True
+    # uvicorn/INFO lines
+    if stripped.startswith("INFO:") or stripped.startswith("["):
+        return True
+    return False
+
+
+def _read_logs_via_docker(offset: int) -> dict | None:
+    """Dev environment: bot runs in a separate container via docker compose.
+    Returns None if docker isn't available (e.g. production)."""
     try:
         result = subprocess.run(
             ["docker", "compose", "logs", "--no-log-prefix", "--tail", "3000", "bot"],
             capture_output=True, text=True, cwd=str(_PROJECT_ROOT), timeout=8,
         )
-        # Filter out the noisy system-prompt lines that pipecat logs as bare INF lines
-        # (no timestamp prefix). Keep only structured log lines and server messages.
-        def _keep(line: str) -> bool:
-            stripped = line.strip()
-            if not stripped:
-                return False
-            # pipecat structured line: starts with a timestamp "2026-..."
-            if stripped[:4].isdigit():
-                return True
-            # uvicorn/INFO lines
-            if stripped.startswith("INFO:") or stripped.startswith("["):
-                return True
-            return False
-        all_lines = [l for l in result.stdout.splitlines() if _keep(l)]
-        if not all_lines:
-            err = result.stderr.strip()
-            if err:
-                return {"lines": [f"[docker] {err[:300]}"], "next_offset": 0}
-            return {"lines": [], "next_offset": 0}
-        new_lines = all_lines[offset:]
-        return {"lines": new_lines, "next_offset": len(all_lines)}
-    except FileNotFoundError:
-        return {"lines": ["[server] docker no encontrado — instalá Docker Desktop"], "next_offset": 0}
-    except subprocess.TimeoutExpired:
-        return {"lines": ["[server] timeout leyendo docker logs"], "next_offset": offset}
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    all_lines = [l for l in result.stdout.splitlines() if _keep_log_line(l)]
+    if not all_lines and result.returncode != 0:
+        return None
+    new_lines = all_lines[offset:]
+    return {"lines": new_lines, "next_offset": len(all_lines)}
+
+
+def _read_logs_via_file(offset: int) -> dict:
+    """Production: server.py and bot.py are sibling processes in the same
+    container sharing conversation_logs/, so read the log file directly."""
+    if not _BOT_LOG_FILE.exists():
+        return {"lines": ["[server] bot.log aún no existe — esperando a que el bot arranque"], "next_offset": 0}
+    try:
+        size = _BOT_LOG_FILE.stat().st_size
+        if offset > size:
+            offset = 0  # file was rotated
+        with open(_BOT_LOG_FILE, errors="replace") as f:
+            f.seek(offset)
+            chunk = f.read(64 * 1024)  # max 64 KB per poll
+        lines = [l for l in chunk.splitlines() if l.strip()]
+        return {"lines": lines, "next_offset": offset + len(chunk.encode("utf-8", errors="replace"))}
     except Exception as e:
         return {"lines": [f"[server] Error: {e}"], "next_offset": offset}
+
+
+@app.get("/api/logs/recent")
+def get_bot_logs(offset: int = 0, _user: dict = Depends(get_session_user)):
+    """Returns new bot log lines since `offset`. Tries docker compose logs
+    (local dev, bot in its own container) first, falls back to reading the
+    shared log file directly (production, bot + server in one container)."""
+    docker_result = _read_logs_via_docker(offset)
+    if docker_result is not None:
+        return docker_result
+    return _read_logs_via_file(offset)
 
 
 @app.get("/api/audio/{track}/{session_id}")
