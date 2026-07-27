@@ -1,5 +1,7 @@
 .env
 .venv/
+.venv-server/
+.dev/
 __pycache__/
 *.pyc
 recording_*.wav
@@ -8,3 +10,4 @@ node_modules/
 dist/
 supabase/.branches
 supabase/.temp
+.dev

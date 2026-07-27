@@ -84,6 +84,11 @@ export default function SettingsScreen({
           <div className="sc">
             <div className="sc-hd">{t(lang,'settingsProvider')}</div>
             <div className="sc-body">
+              <div className="settings-notice">
+                {lang === 'es'
+                  ? '📞 Esta configuración aplica a las llamadas reales vía Twilio. Para hacer una prueba rápida usá la pantalla Test Call.'
+                  : '📞 This configuration applies to real phone calls via Twilio. Use the Test Call screen for quick tests.'}
+              </div>
               <div className="field">
                 <label>{t(lang,'lblProvider')}</label>
                 <select value={provider} onChange={e => { setProvider(e.target.value); setVoice('') }}>
@@ -108,6 +113,7 @@ export default function SettingsScreen({
               </div>
             </div>
           </div>
+
 
           {/* Bot WebSocket URL */}
           <div className="sc">

@@ -4,6 +4,31 @@ import { resolveActivePromptSelection } from './utils.js'
 import VoiceCallPanel from './VoiceCallPanel.jsx'
 import { t } from './i18n.js'
 
+const LOG_LEVELS = {
+  DEBUG:   { cls: 'log-debug',   label: 'DBG' },
+  INFO:    { cls: 'log-info',    label: 'INF' },
+  SUCCESS: { cls: 'log-success', label: 'OK ' },
+  WARNING: { cls: 'log-warn',    label: 'WRN' },
+  ERROR:   { cls: 'log-error',   label: 'ERR' },
+  CRITICAL:{ cls: 'log-error',   label: 'CRT' },
+}
+
+function parseLogLine(line) {
+  // Format: "2026-07-24 13:45:23.456 | INFO     | message"
+  const m = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s*\|\s*(\w+)\s*\|\s*(.*)$/)
+  if (m) return { ts: m[1].slice(11, 23), level: m[2].toUpperCase(), msg: m[3] }
+  return { ts: '', level: 'INFO', msg: line }
+}
+
+function classifyMsg(msg) {
+  if (msg.includes('[STT→LLM]')) return 'log-stt'
+  if (msg.includes('[LLM→TTS]')) return 'log-llm'
+  if (msg.includes('CALL CONNECTED')) return 'log-connected'
+  if (msg.includes('disconnected') || msg.includes('Disconnected')) return 'log-disconnected'
+  if (msg.includes('[server]')) return 'log-server'
+  return ''
+}
+
 function syncPromptState(prompts, activeData, setPromptText, setSelectedPromptId) {
   const { content, promptId } = resolveActivePromptSelection(prompts, activeData)
   setPromptText(content)
@@ -94,6 +119,7 @@ export default function TestCallScreen({
         </div>
       </div>
 
+      <div className="testcall-content">
       <div className="testcall-body">
         <div className="tc-left">
           <div className="tc-section-hd">{t(lang, 'tcConn')}</div>
@@ -177,12 +203,46 @@ export default function TestCallScreen({
 
         <div className="tc-right">
           <div className="tc-voice-wrap">
+            <BotConfigIndicator
+              lang={lang}
+              savedConfig={config}
+              localProvider={provider}
+              localVoice={voice}
+              providers={providers}
+            />
             <VoiceCallPanel lang={lang} onBeforeConnect={ensurePromptApplied} />
           </div>
           <LivePanel lang={lang} />
         </div>
       </div>
+
+      <BotLogsPanel lang={lang} />
+      </div>
     </>
+  )
+}
+
+function BotConfigIndicator({ lang, savedConfig, localProvider, localVoice, providers }) {
+  const savedProvider = savedConfig?.provider || ''
+  const savedVoice = savedConfig?.voice || ''
+  const isDirty = localProvider !== savedProvider || localVoice !== savedVoice
+
+  const providerLabel = providers[savedProvider]?.label || savedProvider
+  const voiceLabel = providers[savedProvider]?.voices?.find(v => v.id === savedVoice)?.label || savedVoice
+
+  return (
+    <div className={`bot-config-indicator${isDirty ? ' dirty' : ''}`}>
+      {isDirty ? (
+        <span className="bci-warn">{t(lang, 'unappliedConfig')}</span>
+      ) : (
+        <>
+          <span className="bci-label">{t(lang, 'botWillUse')}:</span>
+          <span className="bci-val">{providerLabel}</span>
+          <span className="bci-sep">·</span>
+          <span className="bci-val bci-voice">{voiceLabel}</span>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -263,6 +323,99 @@ function LivePanel({ lang }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function BotLogsPanel({ lang }) {
+  const [open, setOpen] = useState(false)
+  const [logs, setLogs] = useState([])
+  const [connected, setConnected] = useState(false)
+  const offsetRef = useRef(0)
+  const timerRef = useRef(null)
+  const logsRef = useRef(null)
+  const MAX_LINES = 500
+
+  useEffect(() => {
+    if (!open) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+      setConnected(false)
+      return
+    }
+
+    offsetRef.current = 0
+    setLogs([])
+
+    async function poll() {
+      try {
+        const res = await fetch(`/api/logs/recent?offset=${offsetRef.current}`)
+        if (!res.ok) { setConnected(false); return }
+        setConnected(true)
+        const data = await res.json()
+        if (data.lines?.length) {
+          setLogs(prev => {
+            const next = [...prev, ...data.lines]
+            return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next
+          })
+        }
+        offsetRef.current = data.next_offset ?? offsetRef.current
+      } catch {
+        setConnected(false)
+      }
+    }
+
+    poll()
+    timerRef.current = setInterval(poll, 1500)
+    return () => { clearInterval(timerRef.current); timerRef.current = null; setConnected(false) }
+  }, [open])
+
+  useEffect(() => {
+    if (logsRef.current) {
+      logsRef.current.scrollTop = logsRef.current.scrollHeight
+    }
+  }, [logs])
+
+  const isEs = lang === 'es'
+
+  return (
+    <div className={`logs-drawer${open ? ' open' : ''}`}>
+      <button className="logs-drawer-toggle" onClick={() => setOpen(o => !o)}>
+        <span className={`logs-dot${connected ? ' on' : ''}`} />
+        <span>{isEs ? 'Logs del Bot' : 'Bot Logs'}</span>
+        <span className="logs-toggle-icon">{open ? '▼' : '▲'}</span>
+      </button>
+
+      {open && (
+        <div className="logs-body">
+          <div className="logs-toolbar">
+            <span className="logs-count">{logs.length} líneas</span>
+            <button className="btn btn-secondary btn-xs" onClick={() => setLogs([])}>
+              {isEs ? 'Limpiar' : 'Clear'}
+            </button>
+          </div>
+          <div className="logs-scroll" ref={logsRef}>
+            {logs.length === 0 ? (
+              <div className="logs-empty">
+                {connected
+                  ? (isEs ? 'Esperando logs…' : 'Waiting for logs…')
+                  : (isEs ? 'Conectando…' : 'Connecting…')}
+              </div>
+            ) : logs.map((line, i) => {
+              const { ts, level, msg } = parseLogLine(line)
+              const lvl = LOG_LEVELS[level] || LOG_LEVELS.INFO
+              const extra = classifyMsg(msg)
+              return (
+                <div key={i} className={`log-line ${lvl.cls} ${extra}`}>
+                  {ts && <span className="log-ts">{ts}</span>}
+                  <span className="log-lvl">{lvl.label}</span>
+                  <span className="log-msg">{msg}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

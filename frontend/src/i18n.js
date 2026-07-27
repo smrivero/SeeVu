@@ -44,6 +44,8 @@ export const I18N = {
     vcDisconnected:'Disconnected', vcConnecting:'Connecting…', vcConnected:'Connected', vcError:'Connection error',
     vcHint:'Apply config and prompt first, then connect and speak into your microphone.',
     promptRequired:'Select or enter a prompt before connecting.',
+    botWillUse:'Bot will use',
+    unappliedConfig:'⚠ Unapplied changes — click Apply first',
   },
   es: {
     navCalls:'Llamadas', navTest:'Test Call', navSettings:'Configuración',
@@ -90,6 +92,8 @@ export const I18N = {
     vcDisconnected:'Desconectado', vcConnecting:'Conectando…', vcConnected:'Conectado', vcError:'Error de conexión',
     vcHint:'Aplicá config y prompt primero, luego conectá y hablá por el micrófono.',
     promptRequired:'Seleccioná o escribí un prompt antes de conectar.',
+    botWillUse:'Bot usará',
+    unappliedConfig:'⚠ Cambios sin aplicar — hacé click en Aplicar primero',
   },
 }
 

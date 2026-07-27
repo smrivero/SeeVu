@@ -3,8 +3,19 @@ import datetime
 import json
 import os
 import secrets
+import subprocess
 import uuid
 from pathlib import Path
+from collections import deque
+
+# Carga .env si existe (útil en dev sin dev.sh)
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 import openai
 import uvicorn
@@ -94,7 +105,32 @@ PROVIDERS = {
             {"id": "shimmer", "label": "Shimmer — light, airy"},
             {"id": "verse",   "label": "Verse — natural, conversational"},
         ],
-    }
+    },
+    "deepgram_openai_cartesia": {
+        "label": "Deepgram + OpenAI + Cartesia",
+        "voices": [
+            {
+                "id": "71a7ad14-091c-4e8e-a314-022ece01c121",
+                "label": "British Reading Lady — clear, narrative",
+            },
+            {
+                "id": "a0e99841-438c-4a64-b679-ae501e7d6091",
+                "label": "Barbershop Man — warm, conversational",
+            },
+            {
+                "id": "794f9389-aac1-45b6-b726-9d9369183238",
+                "label": "Sarah — professional, friendly",
+            },
+            {
+                "id": "e13cae5c-ec59-4f71-b0a6-266df3c9bb8e",
+                "label": "Madame Mischief — playful, expressive",
+            },
+            {
+                "id": "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+                "label": "Jacqueline — calm, measured",
+            },
+        ],
+    },
 }
 
 app = FastAPI()
@@ -364,6 +400,46 @@ def api_live_session():
 @app.get("/api/providers")
 def api_providers():
     return PROVIDERS
+
+
+_PROJECT_ROOT = Path(__file__).parent
+
+
+@app.get("/api/logs/recent")
+def get_bot_logs(offset: int = 0, _user: dict = Depends(get_session_user)):
+    """Returns new log lines from docker compose logs since line `offset`."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "logs", "--no-log-prefix", "--tail", "3000", "bot"],
+            capture_output=True, text=True, cwd=str(_PROJECT_ROOT), timeout=8,
+        )
+        # Filter out the noisy system-prompt lines that pipecat logs as bare INF lines
+        # (no timestamp prefix). Keep only structured log lines and server messages.
+        def _keep(line: str) -> bool:
+            stripped = line.strip()
+            if not stripped:
+                return False
+            # pipecat structured line: starts with a timestamp "2026-..."
+            if stripped[:4].isdigit():
+                return True
+            # uvicorn/INFO lines
+            if stripped.startswith("INFO:") or stripped.startswith("["):
+                return True
+            return False
+        all_lines = [l for l in result.stdout.splitlines() if _keep(l)]
+        if not all_lines:
+            err = result.stderr.strip()
+            if err:
+                return {"lines": [f"[docker] {err[:300]}"], "next_offset": 0}
+            return {"lines": [], "next_offset": 0}
+        new_lines = all_lines[offset:]
+        return {"lines": new_lines, "next_offset": len(all_lines)}
+    except FileNotFoundError:
+        return {"lines": ["[server] docker no encontrado — instalá Docker Desktop"], "next_offset": 0}
+    except subprocess.TimeoutExpired:
+        return {"lines": ["[server] timeout leyendo docker logs"], "next_offset": offset}
+    except Exception as e:
+        return {"lines": [f"[server] Error: {e}"], "next_offset": offset}
 
 
 @app.get("/api/audio/{track}/{session_id}")

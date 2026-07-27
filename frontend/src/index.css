@@ -598,6 +598,13 @@ tbody td {
 .empty-state p  { font-size: 13px; color: var(--text-2); }
 
 /* ── Test Call ── */
+.testcall-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 .testcall-body {
   flex: 1;
   display: grid;
@@ -616,6 +623,28 @@ tbody td {
   padding: 16px;
   background: var(--surface);
 }
+
+.bot-config-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--r);
+  background: var(--green-s);
+  color: var(--green);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.bot-config-indicator.dirty {
+  background: var(--amber-s);
+  color: var(--amber);
+}
+.bci-label { font-weight: 600; }
+.bci-val   { font-weight: 500; }
+.bci-voice { opacity: .85; }
+.bci-sep   { opacity: .5; }
+.bci-warn  { font-weight: 600; }
 
 .voice-call-panel {
   display: flex;
@@ -825,6 +854,16 @@ tbody td {
   display: flex; flex-direction: column; gap: 12px;
 }
 
+.settings-notice {
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 8px 12px;
+  line-height: 1.5;
+}
+
 .settings-ta {
   width: 100%; resize: vertical; min-height: 220px; padding: 10px;
   border-radius: 6px; border: 1px solid var(--border);
@@ -835,6 +874,78 @@ tbody td {
 }
 
 .settings-ta:focus { border-color: var(--accent); }
+
+/* ── Bot Logs Drawer ──────────────────────────────────────────────────────── */
+.logs-drawer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.logs-drawer-toggle {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 16px;
+  background: none; border: none; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--text-2);
+  text-align: left;
+  transition: background var(--t);
+}
+.logs-drawer-toggle:hover { background: var(--surface2); }
+.logs-toggle-icon { margin-left: auto; font-size: 10px; }
+.logs-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--border); flex-shrink: 0;
+  transition: background .3s;
+}
+.logs-dot.on { background: var(--green); box-shadow: 0 0 0 2px var(--green-s); }
+
+.logs-body {
+  display: flex; flex-direction: column;
+  height: 260px;
+  border-top: 1px solid var(--border);
+}
+.logs-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  flex-shrink: 0;
+}
+.logs-count { font-size: 11px; color: var(--text-3); margin-right: auto; }
+.btn-xs { font-size: 11px; padding: 2px 8px; }
+
+.logs-scroll {
+  flex: 1; overflow-y: auto; overflow-x: auto;
+  padding: 6px 0;
+  font-family: 'SF Mono','Fira Code','Cascadia Code',monospace;
+  font-size: 11px; line-height: 1.55;
+  background: var(--bg);
+}
+.logs-empty {
+  padding: 16px; color: var(--text-3); text-align: center; font-size: 12px;
+}
+.log-line {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 1px 12px;
+  transition: background .1s;
+}
+.log-line:hover { background: var(--surface2); }
+.log-ts   { color: var(--text-3); flex-shrink: 0; font-size: 10px; }
+.log-lvl  { flex-shrink: 0; width: 28px; font-size: 10px; font-weight: 700; opacity: .7; }
+.log-msg  { color: var(--text); word-break: break-all; white-space: pre-wrap; }
+
+/* level colours */
+.log-debug  .log-lvl { color: var(--text-3); }
+.log-info   .log-lvl { color: var(--accent); }
+.log-success .log-lvl { color: var(--green); }
+.log-warn   .log-lvl, .log-warn .log-msg { color: var(--amber); }
+.log-error  .log-lvl, .log-error .log-msg { color: var(--red); }
+
+/* message highlights */
+.log-stt .log-msg        { color: var(--accent); font-weight: 600; }
+.log-llm .log-msg        { color: var(--green); font-weight: 600; }
+.log-connected .log-msg  { color: var(--green); font-weight: 700; }
+.log-disconnected .log-msg { color: var(--text-2); }
+.log-server .log-msg     { color: var(--amber); font-style: italic; }
 
 .sfb {
   font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600;
