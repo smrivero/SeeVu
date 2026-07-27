@@ -21,6 +21,7 @@ RUN cd frontend && npm ci && npm run build
 
 ENV BOT_INTERNAL_WS_URL=ws://127.0.0.1:7860/ws
 ENV BOT_PORT=7860
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
