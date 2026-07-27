@@ -350,9 +350,14 @@ function BotLogsPanel({ lang }) {
     async function poll() {
       try {
         const res = await fetch(`/api/logs/recent?offset=${offsetRef.current}`)
-        if (!res.ok) { setConnected(false); return }
+        if (!res.ok) {
+          console.log('[bot-logs] fetch not ok', res.status, await res.text().catch(() => ''))
+          setConnected(false)
+          return
+        }
         setConnected(true)
         const data = await res.json()
+        console.log('[bot-logs] poll response', { offset: offsetRef.current, ...data })
         if (data.lines?.length) {
           setLogs(prev => {
             const next = [...prev, ...data.lines]
@@ -360,7 +365,8 @@ function BotLogsPanel({ lang }) {
           })
         }
         offsetRef.current = data.next_offset ?? offsetRef.current
-      } catch {
+      } catch (err) {
+        console.log('[bot-logs] fetch failed', err)
         setConnected(false)
       }
     }
