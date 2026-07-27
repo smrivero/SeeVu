@@ -246,6 +246,16 @@ def get_session_user(request: Request) -> dict:
     return user
 
 
+def get_ws_session_user(websocket: WebSocket) -> dict:
+    """Same session check as get_session_user, but for WebSocket routes
+    (Request-based dependencies don't bind to websocket connections)."""
+    token = websocket.cookies.get("session")
+    user = _sessions.get(token or "")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
 def require_superadmin(user: dict = Depends(get_session_user)) -> dict:
     if "superadmin" not in user.get("roles", []):
         raise HTTPException(status_code=403, detail="Superadmin required")
@@ -587,7 +597,7 @@ async def _proxy_to_bot(client_ws: WebSocket) -> None:
 
 
 @app.websocket("/ws")
-async def websocket_proxy_dashboard(client_ws: WebSocket):
+async def websocket_proxy_dashboard(client_ws: WebSocket, _user: dict = Depends(get_ws_session_user)):
     """WebSocket autenticado para pruebas desde el dashboard (navegador)."""
     await _proxy_to_bot(client_ws)
 
