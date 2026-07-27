@@ -479,8 +479,16 @@ def get_bot_logs(offset: int = 0, _user: dict = Depends(get_session_user)):
     shared log file directly (production, bot + server in one container)."""
     docker_result = _read_logs_via_docker(offset)
     if docker_result is not None:
+        docker_result["source"] = "docker"
         return docker_result
-    return _read_logs_via_file(offset)
+    result = _read_logs_via_file(offset)
+    result["source"] = "file"
+    result["debug"] = {
+        "path": str(_BOT_LOG_FILE),
+        "exists": _BOT_LOG_FILE.exists(),
+        "size": _BOT_LOG_FILE.stat().st_size if _BOT_LOG_FILE.exists() else None,
+    }
+    return result
 
 
 @app.get("/api/audio/{track}/{session_id}")
