@@ -61,16 +61,31 @@ from supabase import AsyncClient, acreate_client, create_client
 load_dotenv(override=True)
 
 # ── File logging (shared with dashboard via conversation_logs/ volume) ────────
+# Not added here at import time: pipecat.runner.run.main() calls
+# logger.remove() during its own startup (wiping every sink configured
+# before it), then adds only its own stderr sink. Since main() runs after
+# all of this module's top-level code, a sink added here would be deleted
+# moments later, before any real call ever happens. _ensure_file_sink() is
+# called from run_bot() instead, which only executes once main()'s own
+# logger.remove() has already fired.
 _LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "conversation_logs"))
 os.makedirs(_LOG_DIR, exist_ok=True)
 _BOT_LOG_PATH = os.path.join(_LOG_DIR, "bot.log")
-logger.add(
-    _BOT_LOG_PATH,
-    rotation="10 MB",
-    retention=3,
-    level="INFO",
-    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
-)
+_file_sink_added = False
+
+
+def _ensure_file_sink():
+    global _file_sink_added
+    if _file_sink_added:
+        return
+    logger.add(
+        _BOT_LOG_PATH,
+        rotation="10 MB",
+        retention=3,
+        level="INFO",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
+    )
+    _file_sink_added = True
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "agents_prompts", "agent_constructor.txt")
 
@@ -332,6 +347,7 @@ async def run_bot(
     testing: bool,
     call_info: dict | None = None,
 ):
+    _ensure_file_sink()
     system_prompt = load_prompt()
     config = load_config()
     provider = config.get("provider", PROVIDER_OPENAI_REALTIME)
