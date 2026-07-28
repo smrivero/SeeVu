@@ -164,9 +164,9 @@ def load_conversations() -> list[dict]:
 
 
 def load_config() -> dict:
-    default = {"provider": "openai_realtime", "voice": "verse"}
+    default = {"provider": "openai_realtime", "voice": "verse", "log_level": "INFO"}
     try:
-        res = get_db().table("app_config").select("provider,voice").eq("id", 1).single().execute()
+        res = get_db().table("app_config").select("provider,voice,log_level").eq("id", 1).single().execute()
         if res.data:
             return {**default, **res.data}
     except Exception:
@@ -337,14 +337,21 @@ def api_get_config():
     return load_config()
 
 
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
+
+
 @app.post("/api/config")
 async def api_set_config(payload: dict, user: dict = Depends(get_session_user)):
     try:
-        get_db().table("app_config").update({
+        update = {
             "provider": payload.get("provider"),
             "voice": payload.get("voice"),
             "updated_at": _now(),
-        }).eq("id", 1).execute()
+        }
+        log_level = payload.get("log_level")
+        if log_level in _VALID_LOG_LEVELS:
+            update["log_level"] = log_level
+        get_db().table("app_config").update(update).eq("id", 1).execute()
         _set_live_session_initiator(user)
         return {"ok": True}
     except Exception as e:

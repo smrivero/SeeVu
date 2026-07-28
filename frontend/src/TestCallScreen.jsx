@@ -83,12 +83,17 @@ export default function TestCallScreen({
 }) {
   const [provider, setProvider] = useState(config.provider)
   const [voice, setVoice] = useState(config.voice)
+  const [logLevel, setLogLevel] = useState(config.log_level || 'INFO')
   const [promptText, setPromptText] = useState(activePromptData.content || '')
   const [selectedPromptId, setSelectedPromptId] = useState(activePromptData.promptId || '')
   const [configStatus, setConfigStatus] = useState(null)
   const [promptStatus, setPromptStatus] = useState(null)
 
-  useEffect(() => { setProvider(config.provider); setVoice(config.voice) }, [config])
+  useEffect(() => {
+    setProvider(config.provider)
+    setVoice(config.voice)
+    setLogLevel(config.log_level || 'INFO')
+  }, [config])
 
   useEffect(() => {
     syncPromptState(prompts, activePromptData, setPromptText, setSelectedPromptId)
@@ -110,8 +115,8 @@ export default function TestCallScreen({
   }
 
   async function applyConfig() {
-    const d = await saveConfig(provider, voice)
-    if (d.ok) onConfigChange({ provider, voice })
+    const d = await saveConfig(provider, voice, logLevel)
+    if (d.ok) onConfigChange({ provider, voice, log_level: logLevel })
     showSfb(setConfigStatus, d.ok, d.ok ? t(lang, 'applied') : 'Error')
   }
 
@@ -170,6 +175,15 @@ export default function TestCallScreen({
               <label>{t(lang, 'lblVoice')}</label>
               <select value={voice} onChange={(e) => setVoice(e.target.value)}>
                 {voices.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>{t(lang, 'lblLogLevel')}</label>
+              <select value={logLevel} onChange={(e) => setLogLevel(e.target.value)}>
+                <option value="DEBUG">DEBUG — {t(lang, 'logLevelDebugHint')}</option>
+                <option value="INFO">INFO — {t(lang, 'logLevelInfoHint')}</option>
+                <option value="WARNING">WARNING — {t(lang, 'logLevelWarnHint')}</option>
+                <option value="ERROR">ERROR — {t(lang, 'logLevelErrHint')}</option>
               </select>
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>

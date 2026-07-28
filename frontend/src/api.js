@@ -31,11 +31,11 @@ export async function fetchConfig() {
   return fetch('/api/config').then(r => r.json())
 }
 
-export async function saveConfig(provider, voice) {
+export async function saveConfig(provider, voice, logLevel) {
   return fetch('/api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, voice }),
+    body: JSON.stringify({ provider, voice, log_level: logLevel }),
   }).then(r => r.json())
 }
 

@@ -71,21 +71,30 @@ load_dotenv(override=True)
 _LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "conversation_logs"))
 os.makedirs(_LOG_DIR, exist_ok=True)
 _BOT_LOG_PATH = os.path.join(_LOG_DIR, "bot.log")
-_file_sink_added = False
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
+_file_sink_id = None
+_file_sink_level = None
 
 
-def _ensure_file_sink():
-    global _file_sink_added
-    if _file_sink_added:
+def _ensure_file_sink(level: str = "INFO"):
+    """(Re)configures the file sink for the given level. Cheap no-op if the
+    level hasn't changed since the last call, so callers can call this on
+    every request without re-adding the sink each time."""
+    global _file_sink_id, _file_sink_level
+    if level not in _VALID_LOG_LEVELS:
+        level = "INFO"
+    if _file_sink_id is not None and _file_sink_level == level:
         return
-    logger.add(
+    if _file_sink_id is not None:
+        logger.remove(_file_sink_id)
+    _file_sink_id = logger.add(
         _BOT_LOG_PATH,
         rotation="10 MB",
         retention=3,
-        level="INFO",
+        level=level,
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
     )
-    _file_sink_added = True
+    _file_sink_level = level
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "agents_prompts", "agent_constructor.txt")
 
@@ -127,10 +136,10 @@ def load_prompt() -> str:
 
 
 def load_config() -> dict:
-    default = {"provider": "openai_realtime", "voice": "verse"}
+    default = {"provider": "openai_realtime", "voice": "verse", "log_level": "INFO"}
     try:
         db = create_client(SUPABASE_URL, SUPABASE_KEY)
-        res = db.table("app_config").select("provider,voice").eq("id", 1).single().execute()
+        res = db.table("app_config").select("provider,voice,log_level").eq("id", 1).single().execute()
         return {**default, **(res.data or {})}
     except Exception as e:
         logger.warning(f"Could not load config from Supabase: {e}")
@@ -347,9 +356,9 @@ async def run_bot(
     testing: bool,
     call_info: dict | None = None,
 ):
-    _ensure_file_sink()
     system_prompt = load_prompt()
     config = load_config()
+    _ensure_file_sink(config.get("log_level", "INFO"))
     provider = config.get("provider", PROVIDER_OPENAI_REALTIME)
     voice = config.get("voice", "verse")
 
