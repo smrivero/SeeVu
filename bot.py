@@ -493,7 +493,7 @@ async def run_bot(
         ])
         audio_in_sample_rate = 24000
         audio_out_sample_rate = 8000
-        kickoff_frames = [LLMContext()]
+        kickoff_frames = [LLMRunFrame()]
 
     worker = PipelineWorker(
         pipeline,

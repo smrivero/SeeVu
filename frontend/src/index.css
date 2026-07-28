@@ -903,6 +903,20 @@ tbody td {
   height: 260px;
   border-top: 1px solid var(--border);
 }
+.logs-summary {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  flex-shrink: 0;
+}
+.ls-item { display: flex; flex-direction: column; gap: 2px; }
+.ls-label { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-3); }
+.ls-val { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.ls-val.ls-ok { color: var(--green); }
+.ls-val.ls-err { color: var(--red); }
+.ls-val.ls-warn { color: var(--amber, #d97706); }
+
 .logs-toolbar {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 12px;

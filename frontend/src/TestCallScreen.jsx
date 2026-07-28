@@ -29,6 +29,40 @@ function classifyMsg(msg) {
   return ''
 }
 
+function computeSessionSummary(logs) {
+  const summary = {
+    provider: null,
+    voice: null,
+    errorCount: 0,
+    warningCount: 0,
+    botBytes: null,
+    userBytes: null,
+    saved: false,
+  }
+  for (const line of logs) {
+    const { level, msg } = parseLogLine(line)
+    if (level === 'ERROR' || level === 'CRITICAL') summary.errorCount++
+    else if (level === 'WARNING') summary.warningCount++
+
+    const connMatch = msg.match(/CALL CONNECTED — provider=(\S+)\s+voice=(\S+)/)
+    if (connMatch) { summary.provider = connMatch[1]; summary.voice = connMatch[2] }
+
+    const botAudio = msg.match(/Audio uploaded: bot_\S+\((\d+) bytes\)/) || msg.match(/Audio uploaded: bot_\S+\s*\((\d+) bytes\)/)
+    if (botAudio) summary.botBytes = parseInt(botAudio[1], 10)
+    const userAudio = msg.match(/Audio uploaded: user_\S+\((\d+) bytes\)/) || msg.match(/Audio uploaded: user_\S+\s*\((\d+) bytes\)/)
+    if (userAudio) summary.userBytes = parseInt(userAudio[1], 10)
+
+    if (msg.includes('Conversation saved to Supabase')) summary.saved = true
+  }
+  return summary
+}
+
+function formatBytes(n) {
+  if (n == null) return '—'
+  if (n < 1024) return `${n} B`
+  return `${(n / 1024).toFixed(1)} KB`
+}
+
 function syncPromptState(prompts, activeData, setPromptText, setSelectedPromptId) {
   const { content, promptId } = resolveActivePromptSelection(prompts, activeData)
   setPromptText(content)
@@ -334,6 +368,7 @@ function BotLogsPanel({ lang }) {
   const offsetRef = useRef(0)
   const timerRef = useRef(null)
   const logsRef = useRef(null)
+  const seenLinesRef = useRef(new Set())
   const MAX_LINES = 500
 
   useEffect(() => {
@@ -345,6 +380,7 @@ function BotLogsPanel({ lang }) {
     }
 
     offsetRef.current = 0
+    seenLinesRef.current = new Set()
     setLogs([])
 
     async function poll() {
@@ -357,11 +393,24 @@ function BotLogsPanel({ lang }) {
         }
         setConnected(true)
         const data = await res.json()
-        console.log('[bot-logs] poll response', { offset: offsetRef.current, ...data })
         if (data.lines?.length) {
           setLogs(prev => {
-            const next = [...prev, ...data.lines]
-            return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next
+            // A redeploy/restart can reset the server's offset to 0, causing
+            // already-seen lines to be re-sent; skip anything already shown.
+            const seen = seenLinesRef.current
+            const fresh = data.lines.filter(l => {
+              if (seen.has(l)) return false
+              seen.add(l)
+              return true
+            })
+            if (!fresh.length) return prev
+            const next = [...prev, ...fresh]
+            if (next.length > MAX_LINES) {
+              const dropped = next.length - MAX_LINES
+              for (let i = 0; i < dropped; i++) seen.delete(next[i])
+              return next.slice(-MAX_LINES)
+            }
+            return next
           })
         }
         offsetRef.current = data.next_offset ?? offsetRef.current
@@ -383,6 +432,7 @@ function BotLogsPanel({ lang }) {
   }, [logs])
 
   const isEs = lang === 'es'
+  const summary = computeSessionSummary(logs)
 
   return (
     <div className={`logs-drawer${open ? ' open' : ''}`}>
@@ -394,6 +444,34 @@ function BotLogsPanel({ lang }) {
 
       {open && (
         <div className="logs-body">
+          {summary.provider && (
+            <div className="logs-summary">
+              <span className="ls-item">
+                <span className="ls-label">{isEs ? 'Conexión' : 'Connection'}</span>
+                <span className="ls-val ls-ok">{summary.provider} · {summary.voice}</span>
+              </span>
+              <span className="ls-item">
+                <span className="ls-label">{isEs ? 'Errores' : 'Errors'}</span>
+                <span className={`ls-val ${summary.errorCount ? 'ls-err' : 'ls-ok'}`}>{summary.errorCount}</span>
+              </span>
+              <span className="ls-item">
+                <span className="ls-label">{isEs ? 'Advertencias' : 'Warnings'}</span>
+                <span className={`ls-val ${summary.warningCount ? 'ls-warn' : 'ls-ok'}`}>{summary.warningCount}</span>
+              </span>
+              <span className="ls-item">
+                <span className="ls-label">{isEs ? 'Audio bot' : 'Bot audio'}</span>
+                <span className="ls-val">{formatBytes(summary.botBytes)}</span>
+              </span>
+              <span className="ls-item">
+                <span className="ls-label">{isEs ? 'Audio usuario' : 'User audio'}</span>
+                <span className="ls-val">{formatBytes(summary.userBytes)}</span>
+              </span>
+              <span className="ls-item">
+                <span className="ls-label">Supabase</span>
+                <span className={`ls-val ${summary.saved ? 'ls-ok' : ''}`}>{summary.saved ? '✓' : '—'}</span>
+              </span>
+            </div>
+          )}
           <div className="logs-toolbar">
             <span className="logs-count">{logs.length} líneas</span>
             <button className="btn btn-secondary btn-xs" onClick={() => setLogs([])}>
