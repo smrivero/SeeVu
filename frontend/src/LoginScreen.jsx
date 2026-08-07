@@ -14,7 +14,10 @@ export default function LoginScreen({ onLogin }) {
     setLoading(true)
     setError('')
     try {
-      const { ok, data } = await loginApi(email, pass)
+      // Shorthand for the demo account: "upwork" alone expands to the full
+      // address before hitting Supabase.
+      const loginEmail = email.trim().toLowerCase() === 'upwork' ? 'upwork@upwork.demo' : email
+      const { ok, data } = await loginApi(loginEmail, pass)
       if (ok) {
         if (remember) {
           localStorage.setItem('saved_email', email)
@@ -65,7 +68,8 @@ export default function LoginScreen({ onLogin }) {
           <input
             id="login-u"
             className="login-input"
-            type="email"
+            type="text"
+            inputMode="email"
             placeholder="Enter your email"
             autoComplete="email"
             value={email}
