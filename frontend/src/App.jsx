@@ -5,6 +5,8 @@ import LoginScreen from './LoginScreen.jsx'
 import Sidebar from './Sidebar.jsx'
 import CallsScreen from './CallsScreen.jsx'
 import TestCallScreen from './TestCallScreen.jsx'
+import ChatScreen from './ChatScreen.jsx'
+import ChatHistoryScreen from './ChatHistoryScreen.jsx'
 import SettingsScreen from './SettingsScreen.jsx'
 import SavePromptModal from './SavePromptModal.jsx'
 
@@ -14,7 +16,7 @@ export default function App() {
   const [lang, setLang]         = useState(() => localStorage.getItem('lang') || 'en')
   const [theme, setTheme]       = useState(() => localStorage.getItem('theme') || 'light')
   const [providers, setProviders] = useState({})
-  const [config, setConfig]     = useState({ provider: 'openai_realtime', voice: 'verse' })
+  const [config, setConfig]     = useState({ provider: 'openai_realtime', voice: 'verse', chat_model: 'gpt-4o-mini' })
   const [prompts, setPrompts]   = useState([])
   const [activePromptData, setActivePromptData] = useState({ content: '', promptId: '' })
   const [online, setOnline]     = useState(true)
@@ -85,6 +87,24 @@ export default function App() {
             onConfigChange={setConfig}
             onActivePromptChange={setActivePromptData}
             onOpenModal={content => setModal({ content })}
+          />
+        </div>
+
+        <div className={`screen${screen === 'chat' ? ' active' : ''}`}>
+          <ChatScreen
+            lang={lang}
+            isActive={screen === 'chat'}
+            config={config}
+            activePromptData={activePromptData}
+            onActivePromptChange={setActivePromptData}
+            onNavigate={setScreen}
+          />
+        </div>
+
+        <div className={`screen${screen === 'chathistory' ? ' active' : ''}`}>
+          <ChatHistoryScreen
+            lang={lang}
+            isActive={screen === 'chathistory'}
           />
         </div>
 

@@ -533,12 +533,13 @@ async def run_bot(
             "config": config,
             "turns": [],
         })
-        # For Deepgram+Cartesia: wait for Deepgram WS to connect and settle
-        # before sending the kickoff. Without this, Silero VAD fires on the
-        # initial audio burst the moment Deepgram connects (~2.4s after call
-        # start), interrupting the LLM greeting before TTS can speak it.
+        # For Deepgram+Cartesia: brief wait for Deepgram WS to connect and
+        # settle before sending the kickoff. MuteUntilFirstBotCompleteUserMuteStrategy
+        # now protects the greeting from being cancelled by a false VAD
+        # trigger regardless of timing, so this only needs to cover actual
+        # connection setup, not the full settle window from before.
         if provider == PROVIDER_DEEPGRAM_CARTESIA:
-            await asyncio.sleep(3.5)
+            await asyncio.sleep(1.5)
         await worker.queue_frames(kickoff_frames)
 
     @transport.event_handler("on_client_disconnected")

@@ -334,6 +334,7 @@ function ConvRow({ conv: c, lang, open, deleting, onToggle, onPlayAudio, onDelet
 
 function ConvAnalysis({ sessionId, analysis, lang, onAnalyzed }) {
   const [pending, setPending] = useState(false)
+  const [error, setError] = useState(false)
 
   if (analysis) {
     const s = analysis.sentiment || 'neutral'
@@ -359,22 +360,28 @@ function ConvAnalysis({ sessionId, analysis, lang, onAnalyzed }) {
   }
 
   return (
-    <button
-      className="analysis-trigger"
-      disabled={pending}
-      onClick={async () => {
-        setPending(true)
-        try {
-          const result = await analyzeCallApi(sessionId)
-          onAnalyzed(result)
-        } catch { /* ignore */ }
-        setPending(false)
-      }}
-    >
-      <svg fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.8" style={{width:'14px',height:'14px',flexShrink:0}}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 2L6.5 7H11L7 14M3 4l1 1M13 4l-1 1M3 12l1-1M13 12l-1-1"/>
-      </svg>
-      {pending ? t(lang,'analyzing') : t(lang,'analyzeBtn')}
-    </button>
+    <>
+      <button
+        className="analysis-trigger"
+        disabled={pending}
+        onClick={async () => {
+          setPending(true)
+          setError(false)
+          try {
+            const result = await analyzeCallApi(sessionId)
+            onAnalyzed(result)
+          } catch {
+            setError(true)
+          }
+          setPending(false)
+        }}
+      >
+        <svg fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.8" style={{width:'14px',height:'14px',flexShrink:0}}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 2L6.5 7H11L7 14M3 4l1 1M13 4l-1 1M3 12l1-1M13 12l-1-1"/>
+        </svg>
+        {pending ? t(lang,'analyzing') : t(lang,'analyzeBtn')}
+      </button>
+      {error && <div className="chat-error" style={{marginTop:'6px'}}>{t(lang,'analyzeError')}</div>}
+    </>
   )
 }

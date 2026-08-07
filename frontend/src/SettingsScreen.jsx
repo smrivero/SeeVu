@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { saveConfig, applyPromptApi, fetchActivePrompt } from './api.js'
+import { saveConfig, applyPromptApi, fetchActivePrompt, fetchChatModels } from './api.js'
 import { BOT_WS_URL_KEY, getBotWsUrl } from './hooks/useVoiceCall.js'
 import { resolveActivePromptSelection } from './utils.js'
 import { t } from './i18n.js'
@@ -22,8 +22,15 @@ export default function SettingsScreen({
   const [selectedPromptId, setSelectedPromptId] = useState(activePromptData.promptId || '')
   const [configStatus, setConfigStatus] = useState(null)
   const [promptStatus, setPromptStatus] = useState(null)
+  const [chatModel, setChatModel] = useState(config.chat_model || 'gpt-4o-mini')
+  const [chatModels, setChatModels] = useState([])
+  const [chatModelStatus, setChatModelStatus] = useState(null)
 
-  useEffect(() => { setProvider(config.provider); setVoice(config.voice) }, [config])
+  useEffect(() => { setProvider(config.provider); setVoice(config.voice); setChatModel(config.chat_model || 'gpt-4o-mini') }, [config])
+
+  useEffect(() => {
+    fetchChatModels().then(d => setChatModels(d.models || []))
+  }, [])
 
   useEffect(() => {
     const { content, promptId } = resolveActivePromptSelection(prompts, activePromptData)
@@ -50,8 +57,14 @@ export default function SettingsScreen({
 
   async function applyProviderConfig() {
     const d = await saveConfig(provider, voice)
-    if (d.ok) onConfigChange({ provider, voice })
+    if (d.ok) onConfigChange({ ...config, provider, voice })
     showSfb(setConfigStatus, d.ok, d.ok ? t(lang,'applied') : 'Error')
+  }
+
+  async function applyChatModel() {
+    const d = await saveConfig(config.provider, config.voice, config.log_level, chatModel)
+    if (d.ok) onConfigChange({ ...config, chat_model: chatModel })
+    showSfb(setChatModelStatus, d.ok, d.ok ? t(lang,'applied') : 'Error')
   }
 
   function applyBotWsUrl() {
@@ -114,6 +127,32 @@ export default function SettingsScreen({
             </div>
           </div>
 
+
+          {/* Chat model */}
+          <div className="sc">
+            <div className="sc-hd">{t(lang,'settingsChat')}</div>
+            <div className="sc-body">
+              <div className="settings-notice">
+                {lang === 'es'
+                  ? '💬 Este modelo es el que usa la pantalla Chat por defecto para conversaciones nuevas.'
+                  : '💬 This model is what the Chat screen defaults to for new conversations.'}
+              </div>
+              <div className="field">
+                <label>{t(lang,'lblChatModel')}</label>
+                <select value={chatModel} onChange={e => setChatModel(e.target.value)}>
+                  {chatModels.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <button className="btn btn-primary btn-sm" onClick={applyChatModel}>
+                  {t(lang,'btnApply')}
+                </button>
+                {chatModelStatus && (
+                  <span className={`sfb ${chatModelStatus.ok ? 'ok' : 'err'}`}>{chatModelStatus.msg}</span>
+                )}
+              </div>
+            </div>
+          </div>
 
           {/* Bot WebSocket URL */}
           <div className="sc">

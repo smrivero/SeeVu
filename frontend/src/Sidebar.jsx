@@ -56,6 +56,31 @@ export default function Sidebar({ activeScreen, onNavigate, lang, theme, online,
         </NavItem>
 
         <NavItem
+          active={activeScreen === 'chat'}
+          onClick={() => onNavigate('chat')}
+          icon={
+            <svg fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.8">
+              <path d="M2 3.5h12v7H6.2L3 13.2V10.5H2z" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          }
+        >
+          {t(lang, 'navChat')}
+        </NavItem>
+
+        <NavItem
+          active={activeScreen === 'chathistory'}
+          onClick={() => onNavigate('chathistory')}
+          icon={
+            <svg fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="8" cy="8" r="6.5"/>
+              <path d="M8 4.5V8l2.5 2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          }
+        >
+          {t(lang, 'navChatHistory')}
+        </NavItem>
+
+        <NavItem
           active={activeScreen === 'settings'}
           onClick={() => onNavigate('settings')}
           icon={

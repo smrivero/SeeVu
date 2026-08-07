@@ -133,6 +133,12 @@ PROVIDERS = {
     },
 }
 
+# Centralized allow-list for the text Chat's OpenAI model -- the frontend
+# only ever sees this via GET /api/chat/models, never hardcodes it, so
+# there's a single source of truth the backend can validate against.
+CHAT_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"]
+CHAT_DEFAULT_MODEL = "gpt-4o-mini"
+
 app = FastAPI()
 app.add_middleware(AuthMiddleware)
 
@@ -164,9 +170,9 @@ def load_conversations() -> list[dict]:
 
 
 def load_config() -> dict:
-    default = {"provider": "openai_realtime", "voice": "verse", "log_level": "INFO"}
+    default = {"provider": "openai_realtime", "voice": "verse", "log_level": "INFO", "chat_model": CHAT_DEFAULT_MODEL}
     try:
-        res = get_db().table("app_config").select("provider,voice,log_level").eq("id", 1).single().execute()
+        res = get_db().table("app_config").select("provider,voice,log_level,chat_model").eq("id", 1).single().execute()
         if res.data:
             return {**default, **res.data}
     except Exception:
@@ -195,18 +201,19 @@ def load_active_prompt() -> str:
 
 
 def load_active_prompt_data() -> dict:
-    default = {"content": "", "prompt_id": None}
+    default = {"content": "", "prompt_id": None, "updated_at": None}
     try:
-        res = get_db().table("active_prompt").select("content,prompt_id").eq("id", 1).single().execute()
+        res = get_db().table("active_prompt").select("content,prompt_id,updated_at").eq("id", 1).single().execute()
         if res.data:
             return {
                 "content": (res.data.get("content") or "").strip(),
                 "prompt_id": res.data.get("prompt_id") or None,
+                "updated_at": res.data.get("updated_at"),
             }
     except Exception:
         pass
     try:
-        return {"content": _ACTIVE_PROMPT_FILE.read_text(encoding="utf-8").strip(), "prompt_id": None}
+        return {"content": _ACTIVE_PROMPT_FILE.read_text(encoding="utf-8").strip(), "prompt_id": None, "updated_at": None}
     except Exception:
         return default
 
@@ -351,6 +358,9 @@ async def api_set_config(payload: dict, user: dict = Depends(get_session_user)):
         log_level = payload.get("log_level")
         if log_level in _VALID_LOG_LEVELS:
             update["log_level"] = log_level
+        chat_model = payload.get("chat_model")
+        if chat_model in CHAT_MODELS:
+            update["chat_model"] = chat_model
         get_db().table("app_config").update(update).eq("id", 1).execute()
         _set_live_session_initiator(user)
         return {"ok": True}
@@ -401,6 +411,143 @@ async def api_apply_prompt(payload: dict, user: dict = Depends(get_session_user)
         }).eq("id", 1).execute()
         _set_live_session_initiator(user)
         return {"ok": True, "prompt_id": prompt_id}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+_MAX_CHAT_HISTORY = 40  # cap turns sent to OpenAI so context doesn't grow unbounded
+
+
+def load_chat_conversations() -> list[dict]:
+    try:
+        res = get_db().table("chat_conversations").select("*").order("updated_at", desc=True).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+
+def _load_chat_session(session_id: str) -> dict | None:
+    """Returns the frozen prompt/model for an existing session, or None if
+    the session_id is new/unknown (caller should start a fresh one)."""
+    try:
+        res = get_db().table("chat_conversations").select("prompt_snapshot,model").eq("session_id", session_id).execute()
+        if res.data:
+            return res.data[0]
+    except Exception:
+        pass
+    return None
+
+
+def _save_chat_turn(session_id: str, history: list[dict], reply: str, user: dict, prompt_snapshot: str, model: str, is_new: bool) -> None:
+    """Persist the conversation so far (best-effort -- a failure here
+    shouldn't fail the chat response the user is waiting on). prompt_snapshot
+    and model are only written on creation -- they stay frozen for the life
+    of the session regardless of what Settings changes to afterward."""
+    now = _now()
+    full_messages = history + [{"role": "assistant", "content": reply}]
+    try:
+        if is_new:
+            get_db().table("chat_conversations").insert({
+                "session_id": session_id,
+                "started_at": now,
+                "updated_at": now,
+                "messages": full_messages,
+                "prompt_snapshot": prompt_snapshot,
+                "model": model,
+                "created_by": user.get("user_id"),
+                "created_by_email": user.get("email"),
+            }).execute()
+        else:
+            get_db().table("chat_conversations").update({
+                "messages": full_messages,
+                "updated_at": now,
+            }).eq("session_id", session_id).execute()
+    except Exception as e:
+        print(f"[chat] failed to persist conversation {session_id}: {e!r}", flush=True)
+
+
+@app.get("/api/chat/models")
+def api_chat_models():
+    return {"models": CHAT_MODELS, "default": CHAT_DEFAULT_MODEL}
+
+
+@app.post("/api/chat")
+async def api_chat(payload: dict, user: dict = Depends(get_session_user)):
+    """Text chat using the same active prompt configured in Settings (and
+    used by the voice agent). The system prompt is always loaded here from
+    the DB -- the frontend sends only the conversation turns, never the
+    prompt itself, so it can't be overridden client-side.
+
+    Prompt and model are frozen into the chat_conversations row the moment
+    a session is created, and reused for every later turn in that session --
+    changing the prompt or the chat model in Settings only affects NEW
+    conversations, never one already in progress.
+    """
+    raw_messages = payload.get("messages")
+    if not isinstance(raw_messages, list):
+        return JSONResponse({"ok": False, "error": "invalid_messages"}, status_code=400)
+
+    history = []
+    for m in raw_messages[-_MAX_CHAT_HISTORY:]:
+        if not isinstance(m, dict):
+            continue
+        role, content = m.get("role"), m.get("content")
+        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+            history.append({"role": role, "content": content.strip()})
+
+    if not history:
+        return JSONResponse({"ok": False, "error": "no_messages"}, status_code=400)
+
+    requested_session_id = (payload.get("session_id") or "").strip()
+    existing = _load_chat_session(requested_session_id) if requested_session_id else None
+
+    if existing:
+        session_id = requested_session_id
+        system_prompt = existing.get("prompt_snapshot") or ""
+        model = existing.get("model") or CHAT_DEFAULT_MODEL
+        is_new = False
+    else:
+        system_prompt = load_active_prompt()
+        if not system_prompt:
+            return JSONResponse({"ok": False, "error": "no_prompt"}, status_code=400)
+        requested_model = payload.get("model")
+        if requested_model in CHAT_MODELS:
+            model = requested_model
+        else:
+            model = load_config().get("chat_model")
+            if model not in CHAT_MODELS:
+                model = CHAT_DEFAULT_MODEL
+        session_id = requested_session_id or str(uuid.uuid4())
+        is_new = True
+
+    messages = [{"role": "system", "content": system_prompt}, *history]
+
+    print(f"[chat] session={session_id[:8]} model={model} new={is_new}", flush=True)
+
+    try:
+        client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        response = await client.chat.completions.create(model=model, messages=messages)
+        reply = response.choices[0].message.content
+    except Exception as e:
+        err = str(e)
+        error_code = "invalid_model" if "model" in err.lower() else "openai_error"
+        return JSONResponse({"ok": False, "error": error_code, "detail": err}, status_code=500)
+
+    _save_chat_turn(session_id, history, reply, user, system_prompt, model, is_new)
+
+    return {"ok": True, "message": reply, "session_id": session_id, "model": model}
+
+
+@app.get("/api/chat/conversations")
+def api_chat_conversations():
+    return load_chat_conversations()
+
+
+@app.delete("/api/chat/conversations/{session_id}")
+def api_delete_chat_conversation(session_id: str):
+    try:
+        get_db().table("chat_conversations").delete().eq("session_id", session_id).execute()
+        return {"ok": True}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
@@ -507,6 +654,48 @@ def api_audio(track: str, session_id: str):
     return RedirectResponse(url)
 
 
+async def _analyze_transcript(messages: list[dict], kind: str) -> dict:
+    """Shared sentiment/summary analysis for both voice calls and text
+    chats. `kind` only tweaks the system prompt wording."""
+    transcript = "\n".join(
+        f"{m['role'].upper()}: {m.get('content', '')}" for m in messages
+    )
+
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    f"You analyze {kind} transcripts. "
+                    "Return ONLY a valid JSON object, no markdown, no extra text."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Analyze this {kind} transcript and return a JSON object with:\n"
+                    "- \"sentiment\": \"positive\", \"neutral\", or \"negative\"\n"
+                    "- \"productive\": true or false (was the goal achieved?)\n"
+                    "- \"summary\": 2-3 sentence summary of what happened\n"
+                    "- \"highlights\": array of 2-4 key points (strings)\n\n"
+                    f"Transcript:\n{transcript}\n\n"
+                    "Return only the JSON object."
+                ),
+            },
+        ],
+        temperature=0.3,
+        max_tokens=600,
+    )
+
+    raw = response.choices[0].message.content or ""
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"sentiment": "neutral", "productive": False, "summary": raw, "highlights": []}
+
+
 @app.post("/api/analyze/{session_id}")
 async def api_analyze(session_id: str):
     try:
@@ -522,45 +711,28 @@ async def api_analyze(session_id: str):
     if not messages:
         return JSONResponse({"error": "No messages to analyze"}, status_code=400)
 
-    transcript = "\n".join(
-        f"{m['role'].upper()}: {m.get('content', '')}" for m in messages
-    )
-
-    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You analyze voice AI call transcripts. "
-                    "Return ONLY a valid JSON object, no markdown, no extra text."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Analyze this call transcript and return a JSON object with:\n"
-                    "- \"sentiment\": \"positive\", \"neutral\", or \"negative\"\n"
-                    "- \"productive\": true or false (was the call goal achieved?)\n"
-                    "- \"summary\": 2-3 sentence summary of what happened\n"
-                    "- \"highlights\": array of 2-4 key points (strings)\n\n"
-                    f"Transcript:\n{transcript}\n\n"
-                    "Return only the JSON object."
-                ),
-            },
-        ],
-        temperature=0.3,
-        max_tokens=600,
-    )
-
-    raw = response.choices[0].message.content or ""
-    try:
-        analysis = json.loads(raw)
-    except Exception:
-        analysis = {"sentiment": "neutral", "productive": False, "summary": raw, "highlights": []}
-
+    analysis = await _analyze_transcript(messages, "voice AI call")
     get_db().table("conversations").update({"analysis": analysis}).eq("session_id", session_id).execute()
+    return analysis
+
+
+@app.post("/api/chat/analyze/{session_id}")
+async def api_analyze_chat(session_id: str):
+    try:
+        res = get_db().table("chat_conversations").select("*").eq("session_id", session_id).single().execute()
+        data = res.data
+    except Exception:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if data.get("analysis"):
+        return data["analysis"]
+
+    messages = data.get("messages", [])
+    if not messages:
+        return JSONResponse({"error": "No messages to analyze"}, status_code=400)
+
+    analysis = await _analyze_transcript(messages, "text chat")
+    get_db().table("chat_conversations").update({"analysis": analysis}).eq("session_id", session_id).execute()
     return analysis
 
 

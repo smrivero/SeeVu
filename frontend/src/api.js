@@ -31,12 +31,16 @@ export async function fetchConfig() {
   return fetch('/api/config').then(r => r.json())
 }
 
-export async function saveConfig(provider, voice, logLevel) {
+export async function saveConfig(provider, voice, logLevel, chatModel) {
   return fetch('/api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, voice, log_level: logLevel }),
+    body: JSON.stringify({ provider, voice, log_level: logLevel, chat_model: chatModel }),
   }).then(r => r.json())
+}
+
+export async function fetchChatModels() {
+  return fetch('/api/chat/models').then(r => r.json())
 }
 
 export async function fetchConversations() {
@@ -71,6 +75,31 @@ export async function applyPromptApi(content, promptId = null) {
 
 export async function fetchLiveSession() {
   return fetch('/api/live-session').then(r => r.json())
+}
+
+export async function sendChatMessage(messages, sessionId, model) {
+  return fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, session_id: sessionId || undefined, model: model || undefined }),
+  }).then(r => r.json())
+}
+
+export async function fetchChatConversations() {
+  const r = await fetch('/api/chat/conversations')
+  if (!r.ok) throw new Error('offline')
+  return r.json()
+}
+
+export async function deleteChatConversationApi(sessionId) {
+  const r = await fetch(`/api/chat/conversations/${sessionId}`, { method: 'DELETE' })
+  return r.json()
+}
+
+export async function analyzeChatApi(sessionId) {
+  const r = await fetch(`/api/chat/analyze/${sessionId}`, { method: 'POST' })
+  if (!r.ok) throw new Error('analyze failed')
+  return r.json()
 }
 
 export async function analyzeCallApi(sessionId) {
